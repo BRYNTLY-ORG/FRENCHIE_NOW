@@ -1,26 +1,52 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
+  --color-background: #fff0f5;
+  --color-foreground: #1a0510;
+  --color-barbie-pink: #e0218a;
+  --color-barbie-light: #ff69b4;
+  --color-barbie-pale: #ffc0cb;
+  --color-barbie-blush: #ffb6c1;
+  --color-barbie-rose: #f06292;
+  --color-barbie-hot: #d81b60;
+  --color-barbie-lavender: #e1bee7;
+  --color-barbie-cream: #fff8f0;
+  --color-barbie-gold: #ffd700;
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+:root {
+  --background: #fff0f5;
+  --foreground: #1a0510;
+  --barbie-pink: #e0218a;
+  --barbie-light: #ff69b4;
+  --barbie-pale: #ffc0cb;
+  --barbie-blush: #ffb6c1;
+  --barbie-rose: #f06292;
+  --barbie-hot: #d81b60;
+  --barbie-lavender: #e1bee7;
+  --barbie-cream: #fff8f0;
+  --barbie-gold: #ffd700;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans), 'Segoe UI', Arial, Helvetica, sans-serif;
+}
+
+/* Custom scrollbar for luxury feel */
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-track {
+  background: var(--barbie-pale);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--barbie-pink);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--barbie-hot);
 }

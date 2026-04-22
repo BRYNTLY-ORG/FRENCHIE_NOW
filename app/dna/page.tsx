@@ -1,0 +1,10 @@
+import { Suspense } from 'react';
+import DNAPageClient from './DNAPageClient';
+
+export default function DNAPage() {
+  return (
+    <Suspense fallback={<div className="text-slate-400 text-sm animate-pulse">Loading DNA...</div>}>
+      <DNAPageClient />
+    </Suspense>
+  );
+}
