@@ -1,0 +1,135 @@
+name: Auto-approve bot workflow runs
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  approve-bot-runs:
+    runs-on: [self-hosted, macOS, num5]
+    steps:
+      - name: Generate GitHub App token
+        id: app-token
+        if: ${{ vars.AGENT_APP_ID != '' }}
+        uses: actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3 # v3.1.1
+        with:
+          app-id: ${{ vars.AGENT_APP_ID }}
+          private-key: ${{ secrets.AGENT_APP_PRIVATE_KEY }}
+      - name: Approve pending workflow runs from trusted bots
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
+        with:
+          github-token: ${{ steps.app-token.outputs.token || github.token || secrets.AGENT_PAT }}
+          script: |
+            const { owner, repo } = context.repo;
+
+            // ── Trusted bot actors whose runs should be auto-approved ──
+            // Must match REVIEW_BOTS in .github/actions/ensure-agent-assignees/action.yml
+            // plus common CI/dependency bots.
+            const TRUSTED_BOTS = new Set([
+              'Copilot',
+              'Claude',
+              'Codex',
+              'copilot',
+              'gemini-code-assist[bot]',
+              'chatgpt-codex-connector[bot]',
+              'claude[bot]',
+              'dependabot[bot]',
+              'renovate[bot]',
+              'imgbot[bot]',
+              'allstar[bot]',
+              'netlify[bot]',
+              'vercel[bot]',
+              'codecov[bot]',
+              'coveralls[bot]',
+            ]);
+
+            function isTrusted(login) {
+              if (!login) return false;
+              return TRUSTED_BOTS.has(login) || login.endsWith('[bot]');
+            }
+            // ──────────────────────────────────────────────────────────
+
+            // 1. Approve workflow runs stuck in "action_required" (awaiting approval)
+            let page = 1;
+            let approved = 0;
+            while (true) {
+              const { data } = await github.rest.actions.listWorkflowRunsForRepo({
+                owner,
+                repo,
+                status: 'action_required',
+                per_page: 100,
+                page,
+              });
+
+              if (!data.workflow_runs || data.workflow_runs.length === 0) break;
+
+              for (const run of data.workflow_runs) {
+                const actor = run.actor?.login || '';
+                const triggering = run.triggering_actor?.login || '';
+
+                if (!isTrusted(actor) && !isTrusted(triggering)) {
+                  console.log(`Run ${run.id} (${run.name}) by ${triggering || actor}: not a trusted bot, skipping`);
+                  continue;
+                }
+
+                try {
+                  await github.rest.actions.approveWorkflowRun({
+                    owner,
+                    repo,
+                    run_id: run.id,
+                  });
+                  approved++;
+                  console.log(`Approved run ${run.id} (${run.name}) triggered by ${triggering || actor}`);
+                } catch (error) {
+                  console.log(`Run ${run.id}: approve failed — ${error.message}`);
+                }
+              }
+
+              if (data.workflow_runs.length < 100) break;
+              page++;
+            }
+
+            // 2. Approve any pending deployment reviews for those same runs
+            if (approved > 0) {
+              const { data: pendingRuns } = await github.rest.actions.listWorkflowRunsForRepo({
+                owner,
+                repo,
+                status: 'waiting',
+                per_page: 100,
+              });
+
+              for (const run of (pendingRuns.workflow_runs || [])) {
+                const actor = run.actor?.login || '';
+                const triggering = run.triggering_actor?.login || '';
+                if (!isTrusted(actor) && !isTrusted(triggering)) continue;
+
+                try {
+                  const { data: pending } = await github.rest.actions.getPendingDeploymentsForRun({
+                    owner,
+                    repo,
+                    run_id: run.id,
+                  });
+
+                  if (pending.length === 0) continue;
+
+                  await github.rest.actions.reviewPendingDeploymentsForRun({
+                    owner,
+                    repo,
+                    run_id: run.id,
+                    environment_ids: pending.map(d => d.environment.id),
+                    state: 'approved',
+                    comment: 'Auto-approved: triggered by a trusted bot account.',
+                  });
+                  console.log(`Approved ${pending.length} pending deployment(s) for run ${run.id}`);
+                } catch (error) {
+                  // Not all runs have pending deployments
+                }
+              }
+            }
+
+            console.log(`Done. Approved ${approved} workflow run(s).`);

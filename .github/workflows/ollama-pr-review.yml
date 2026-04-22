@@ -1,0 +1,263 @@
+name: Ollama PR review
+
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: ollama-pr-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+env:
+  OLLAMA_API_BASE: https://ollama.com/api
+  GITHUB_API_BASE: ${{ github.api_url }}
+  OLLAMA_AGENT_ASSIGNEES: ${{ vars.OLLAMA_AGENT_ASSIGNEES || '' }}
+
+jobs:
+
+  ollama-review:
+    runs-on: [self-hosted, macOS, num5]
+    if: ${{ !github.event.pull_request.draft }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - model: kimi-k2.6:cloud
+            id: kimi
+            header: Ollama Kimi K2.6
+            prompt: |
+              Respond in English only.
+              This is the Kimi K2.6 Ollama review pass. It should act as an independent high-reasoning reviewer alongside GLM and MiniMax.
+              Focus on:
+              - logic errors that require following several changed files or data-flow steps
+              - incorrect assumptions in tests, mocks, fixtures, or generated artifacts
+              - edge cases around permissions, authentication, rate limits, and external APIs
+              - compatibility risks caused by version, platform, or environment differences
+              - places where the implementation satisfies the happy path but misses rollback, retry, or cleanup behavior
+              Avoid duplicating obvious comments from primary reviewers unless the impact is severe.
+              Prefer only material findings and keep the review terse.
+              Prefix every finding heading with [Kimi K2.6].
+          - model: glm-5.1:cloud
+            id: glm
+            header: Ollama GLM Primary
+            prompt: |
+              Respond in English only.
+              This is the primary Ollama review pass and it should complement, not duplicate, the other advanced code review agents already active in this repository such as Codex, Claude, Copilot, CodeRabbit, and Sonar.
+              Focus on the highest-signal issues in the changed code:
+              - correctness and behavioral regressions
+              - API or schema contract breaks
+              - security and secret-handling mistakes
+              - data loss, migration, rollback, and failure-path risk
+              - missing tests that make a regression materially harder to detect
+              Skip style nits, naming advice, optional refactors, and low-value comments another agent is likely to make.
+              Prefer 1-3 material findings total. If several comments reduce to the same root cause, report only the root cause.
+              Prefix every finding heading with [GLM Primary].
+          - model: minimax-m2.7:cloud
+            id: minimax
+            header: Ollama MiniMax Deep
+            prompt: |
+              Respond in English only.
+              This is the deep final-pass Ollama review and it should look for issues that broad reviewers often miss after the obvious comments have already been made.
+              Focus on:
+              - subtle cross-file regressions and interaction bugs
+              - environment, deployment, configuration, and operational risk
+              - concurrency, race-condition, retry, timeout, and recovery-path failures
+              - observability gaps that would make a production issue hard to diagnose
+              - hidden coupling between migrations, background jobs, caches, queues, and external services
+              Avoid repeating straightforward findings that a primary reviewer would likely already report.
+              Prefer only truly material findings and keep the review terse.
+              Prefix every finding heading with [MiniMax Deep].
+    env:
+      OLLAMA_API_KEY: ${{ secrets.OLLAMA_API_KEY }}
+    steps:
+      - name: Generate GitHub App token
+        id: app-token
+        if: ${{ vars.AGENT_APP_ID != '' }}
+        uses: actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3 # v3.1.1
+        with:
+          app-id: ${{ vars.AGENT_APP_ID }}
+          private-key: ${{ secrets.AGENT_APP_PRIVATE_KEY }}
+
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          sparse-checkout: .github/actions
+
+      - name: Ensure agent assignees
+        uses: ./.github/actions/ensure-agent-assignees
+        with:
+          github-token: ${{ steps.app-token.outputs.token || github.token || secrets.AGENT_PAT }}
+          pr-number: ${{ github.event.pull_request.number }}
+          agent-assignees: ${{ env.OLLAMA_AGENT_ASSIGNEES }}
+
+      - name: Run Ollama review (${{ matrix.id }})
+        continue-on-error: true
+        if: ${{ env.OLLAMA_API_KEY != '' }}
+        env:
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token || github.token || secrets.AGENT_PAT }}
+          OWNER: ${{ github.repository_owner }}
+          REPO: ${{ github.event.repository.name }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          OLLAMA_MODEL: ${{ matrix.model }}
+          REVIEW_HEADER: ${{ matrix.header }}
+          REVIEW_PROMPT: ${{ matrix.prompt }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import sys
+          import time
+          import urllib.parse
+          import urllib.request
+          import urllib.error
+
+          github_token = os.environ["GITHUB_TOKEN"]
+          ollama_api_key = os.environ["OLLAMA_API_KEY"]
+          owner = os.environ["OWNER"]
+          repo = os.environ["REPO"]
+          pr_number = os.environ["PR_NUMBER"]
+          ollama_model = os.environ["OLLAMA_MODEL"]
+          review_header = os.environ["REVIEW_HEADER"]
+          review_prompt = os.environ["REVIEW_PROMPT"].strip()
+          github_api_base = os.environ["GITHUB_API_BASE"]
+          ollama_api_base = os.environ["OLLAMA_API_BASE"]
+
+          def request_json(url, *, method="GET", headers=None, payload=None, timeout=120, max_retries=3):
+              last_exc = None
+              for attempt in range(max_retries):
+                  try:
+                      req = urllib.request.Request(url, method=method)
+                      for key, value in (headers or {}).items():
+                          req.add_header(key, value)
+                      if payload is not None:
+                          data = json.dumps(payload).encode("utf-8")
+                          req.data = data
+                          req.add_header("Content-Type", "application/json")
+                      with urllib.request.urlopen(req, timeout=timeout) as response:
+                          return json.load(response)
+                  except (urllib.error.HTTPError) as exc:
+                      last_exc = exc
+                      if exc.code in [429, 500, 502, 503, 504]:
+                          wait = (attempt + 1) * 30
+                          print(f"API returned {exc.code}. Retrying in {wait}s...")
+                          time.sleep(wait)
+                          continue
+                      raise
+                  except (urllib.error.URLError, TimeoutError, ConnectionError) as exc:
+                      last_exc = exc
+                      wait = (attempt + 1) * 30
+                      print(f"Request failed: {exc}. Retrying in {wait}s...")
+                      time.sleep(wait)
+                      continue
+              raise last_exc
+
+          gh_headers = {
+              "Authorization": f"Bearer {github_token}",
+              "Accept": "application/vnd.github+json",
+              "X-GitHub-Api-Version": "2022-11-28",
+          }
+
+          def get_pr_files():
+              files = []
+              page = 1
+              while True:
+                  query = urllib.parse.urlencode({"per_page": 100, "page": page})
+                  url = f"{github_api_base}/repos/{owner}/{repo}/pulls/{pr_number}/files?{query}"
+                  batch = request_json(url, headers=gh_headers)
+                  if not batch:
+                      break
+                  files.extend(batch)
+                  if len(batch) < 100:
+                      break
+                  page += 1
+              return files
+
+          changed_files = []
+          for item in get_pr_files():
+              patch = item.get("patch")
+              if not patch:
+                  continue
+              changed_files.append(
+                  {
+                      "filename": item.get("filename"),
+                      "status": item.get("status"),
+                      "additions": item.get("additions"),
+                      "deletions": item.get("deletions"),
+                      "changes": item.get("changes"),
+                      "patch": patch,
+                  }
+              )
+
+          if not changed_files:
+              print("No patch-bearing files found; skipping review.")
+              sys.exit(0)
+
+          # 1. Fetch PROD_SPEC.md if it exists
+          repo_spec = "No PROD_SPEC.md found."
+          try:
+              spec_data = request_json(
+                  f"{github_api_base}/repos/{owner}/{repo}/contents/PROD_SPEC.md",
+                  headers=gh_headers,
+              )
+              import base64
+              repo_spec = base64.b64decode(spec_data["content"]).decode("utf-8")
+          except Exception:
+              pass
+
+          system_prompt = (
+              "You are an expert pull request reviewer. Review only the changed code shown in the provided patch data. "
+              "Be concise, technical, and skeptical. Prefer only material findings. "
+              "Do not praise the change. Do not discuss style unless it creates a real defect. "
+              "Return GitHub-flavored markdown only."
+          )
+
+          user_prompt = (
+              f"{review_prompt}\n\n"
+              "### Repository Contract (PROD_SPEC.md)\n"
+              f"{repo_spec}\n\n"
+              "### Review Instructions\n"
+              "Review only the changed lines from the pull request files below. "
+              "Verify the changes against the Repository Contract (SLA targets, critical paths, and mission). "
+              "For each finding, explain the concrete risk and, when useful, mention the affected file path. "
+              "Do not invent missing context. If there are no material findings, reply with exactly NO_MATERIAL_FINDINGS.\n\n"
+              f"Changes:\n{json.dumps(changed_files, ensure_ascii=False, indent=2)}"
+          )
+
+          ollama_headers = {"Authorization": f"Bearer {ollama_api_key}"}
+          ollama_payload = {
+              "model": ollama_model,
+              "system": system_prompt,
+              "prompt": user_prompt,
+              "stream": False,
+          }
+          try:
+              result = request_json(
+                  f"{ollama_api_base}/generate",
+                  method="POST",
+                  headers=ollama_headers,
+                  payload=ollama_payload,
+                  timeout=300,
+                  max_retries=3
+              )
+          except Exception as exc:
+              print(f"Ollama API request failed after retries: {exc}. Skipping review.")
+              sys.exit(0)
+          review = (result.get("response") or "").strip()
+          if not review or review == "NO_MATERIAL_FINDINGS":
+              print("Model returned no material findings.")
+              sys.exit(0)
+
+          review_body = f"### {review_header}\n\n{review}"
+          request_json(
+              f"{github_api_base}/repos/{owner}/{repo}/pulls/{pr_number}/reviews",
+              method="POST",
+              headers=gh_headers,
+              payload={"body": review_body, "event": "COMMENT"},
+          )
+          print(f"Posted {review_header} successfully.")
+          PY

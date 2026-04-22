@@ -1,0 +1,50 @@
+name: Incident
+description: Report a production issue or regression
+title: "🚨 Incident: [Short description]"
+labels: ["incident", "autopilot-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## Production Incident Report
+        Please fill out the details below to trigger the `incident-triage` agent.
+  - type: input
+    id: deploy_sha
+    attributes:
+      label: Deploy SHA
+      description: The git commit SHA where the regression was first observed.
+      placeholder: "e.g. 4be0a77"
+    validations:
+      required: true
+  - type: input
+    id: workflow_run
+    attributes:
+      label: Failing Workflow Run
+      description: Link to the GitHub Actions run that failed or showed errors.
+      placeholder: "https://github.com/..."
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity
+      options:
+        - Critical (Service Down)
+        - High (Error Spike)
+        - Medium (Partial Failure)
+        - Low (Minor Regression)
+    validations:
+      required: true
+  - type: textarea
+    id: symptoms
+    attributes:
+      label: Symptoms
+      description: What is happening? Include error messages or screenshots.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to Reproduce
+      description: How can the AI agent reproduce this locally?
+      placeholder: |
+        1. Run `npm run test:e2e`
+        2. Observer failure in `QuoteForm` test
