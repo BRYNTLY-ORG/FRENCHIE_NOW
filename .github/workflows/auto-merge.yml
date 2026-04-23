@@ -1,0 +1,217 @@
+name: Auto-merge PRs
+
+on:
+  pull_request_target:
+    types: [opened, reopened, ready_for_review, synchronize]
+  pull_request_review:
+    types: [submitted]
+  check_suite:
+    types: [completed]
+  status: {}
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+env:
+  OLLAMA_AGENT_ASSIGNEES: ${{ vars.OLLAMA_AGENT_ASSIGNEES || '' }}
+
+jobs:
+  enable-auto-merge:
+    if: |
+      github.event_name == 'pull_request_target' &&
+      github.event.pull_request.draft == false
+    runs-on: [self-hosted, macOS, num5]
+    steps:
+      - name: Generate GitHub App token
+        id: app-token
+        if: ${{ vars.AGENT_APP_ID != '' }}
+        uses: actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3 # v3.1.1
+        with:
+          app-id: ${{ vars.AGENT_APP_ID }}
+          private-key: ${{ secrets.AGENT_APP_PRIVATE_KEY }}
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          sparse-checkout: .github/actions
+      - name: Ensure agent assignees
+        uses: ./.github/actions/ensure-agent-assignees
+        with:
+          github-token: ${{ steps.app-token.outputs.token || github.token || secrets.AGENT_PAT }}
+          pr-number: ${{ github.event.pull_request.number }}
+          agent-assignees: ${{ env.OLLAMA_AGENT_ASSIGNEES }}
+      - uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
+        with:
+          github-token: ${{ steps.app-token.outputs.token || github.token || secrets.AGENT_PAT }}
+          script: |
+            const { owner, repo } = context.repo;
+            const prNumber = context.payload.pull_request.number;
+
+            try {
+              await github.graphql(`
+                mutation($prId: ID!) {
+                  enablePullRequestAutoMerge(input: {
+                    pullRequestId: $prId
+                    mergeMethod: SQUASH
+                  }) {
+                    pullRequest { autoMergeRequest { enabledAt } }
+                  }
+                }
+              `, { prId: context.payload.pull_request.node_id });
+              console.log(`Auto-merge enabled on PR #${prNumber}`);
+            } catch (e) {
+              console.log(`GraphQL auto-merge unavailable: ${e.message}`);
+            }
+
+  fallback-merge:
+    if: |
+      github.event_name == 'pull_request_review' ||
+      github.event_name == 'check_suite' ||
+      github.event_name == 'status'
+    runs-on: [self-hosted, macOS, num5]
+    steps:
+      - name: Generate GitHub App token
+        id: app-token
+        if: ${{ vars.AGENT_APP_ID != '' }}
+        uses: actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3 # v3.1.1
+        with:
+          app-id: ${{ vars.AGENT_APP_ID }}
+          private-key: ${{ secrets.AGENT_APP_PRIVATE_KEY }}
+      - uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
+        with:
+          github-token: ${{ steps.app-token.outputs.token || github.token || secrets.AGENT_PAT }}
+          script: |
+            const { owner, repo } = context.repo;
+
+            const REVIEW_BOTS = [
+              { slug: 'copilot',                 login: 'Copilot' },
+              { slug: 'gemini-code-assist',      login: 'gemini-code-assist[bot]' },
+              { slug: 'chatgpt-codex-connector', login: 'chatgpt-codex-connector[bot]' },
+              { slug: 'claude',                  login: 'Claude' },
+              { slug: 'openai-code-agent',       login: 'Codex' },
+            ];
+            const ASSIGNEE_LOGINS = [...new Set(REVIEW_BOTS.map(bot => bot.login))];
+
+            async function ensureAgentAssignees(prNum) {
+              try {
+                await github.rest.issues.addAssignees({
+                  owner, repo, issue_number: prNum,
+                  assignees: ASSIGNEE_LOGINS,
+                }).catch(() => {});
+                for (const bot of REVIEW_BOTS) {
+                  await github.rest.pulls.requestReviewers({
+                    owner, repo, pull_number: prNum,
+                    reviewers: [bot.slug],
+                  }).catch(() => {});
+                }
+              } catch (e) {
+                console.log(`PR #${prNum}: agent assignee sync: ${e.message}`);
+              }
+            }
+
+            let prNumbers = [];
+
+            if (context.eventName === 'pull_request_review') {
+              prNumbers = [context.payload.pull_request.number];
+            } else {
+              let prs;
+              try {
+                prs = await github.paginate(github.rest.pulls.list, {
+                  owner,
+                  repo,
+                  state: 'open',
+                  per_page: 100,
+                });
+              } catch (error) {
+                console.log(`Unable to list PRs (${error.status || error.message}). Token may lack repo access. Skipping.`);
+                return;
+              }
+              prNumbers = prs.filter(pr => !pr.draft).map(pr => pr.number);
+            }
+
+            for (const prNumber of prNumbers) {
+              let pr;
+              try {
+                ({ data: pr } = await github.rest.pulls.get({
+                  owner,
+                  repo,
+                  pull_number: prNumber,
+                }));
+              } catch (error) {
+                console.log(`PR #${prNumber}: unable to fetch (${error.status || error.message}). Skipping.`);
+                continue;
+              }
+
+              if (pr.draft || pr.merged || pr.state !== 'open') continue;
+              if (pr.auto_merge) continue;
+              if (pr.mergeable === false) continue;
+
+              await ensureAgentAssignees(prNumber);
+
+              if (pr.mergeable === null) {
+                await new Promise(resolve => setTimeout(resolve, 3000));
+                ({ data: pr } = await github.rest.pulls.get({
+                  owner,
+                  repo,
+                  pull_number: prNumber,
+                }));
+                if (pr.mergeable !== true) continue;
+              }
+
+              let status, checks;
+              try {
+                ({ data: status } = await github.rest.repos.getCombinedStatusForRef({
+                  owner,
+                  repo,
+                  ref: pr.head.sha,
+                }));
+                ({ data: checks } = await github.rest.checks.listForRef({
+                  owner,
+                  repo,
+                  ref: pr.head.sha,
+                  per_page: 100,
+                }));
+              } catch (error) {
+                console.log(`PR #${prNumber}: unable to fetch status/checks (${error.status || error.message}). Skipping.`);
+                continue;
+              }
+              const passingCheckConclusions = new Set(['success', 'neutral', 'skipped']);
+              const relevantCheckRuns = checks.check_runs.filter(c => !c.name.includes('Auto-merge'));
+
+              if (status.total_count > 0 && status.state !== 'success') continue;
+              if (relevantCheckRuns.some(c => c.status !== 'completed')) continue;
+              if (relevantCheckRuns.some(c => !passingCheckConclusions.has(c.conclusion || ''))) continue;
+
+              const { data: reviews } = await github.rest.pulls.listReviews({
+                owner,
+                repo,
+                pull_number: prNumber,
+                per_page: 100,
+              });
+
+              const latestByUser = {};
+              for (const review of reviews) {
+                if (review.user?.type === 'Bot') continue;
+                if (review.user?.login === pr.user?.login) continue;
+                if (['APPROVED', 'CHANGES_REQUESTED'].includes(review.state)) {
+                  latestByUser[review.user.login] = review.state;
+                }
+              }
+
+              const finalReviewStates = Object.values(latestByUser);
+              if (finalReviewStates.includes('CHANGES_REQUESTED')) continue;
+
+              try {
+                await github.rest.pulls.merge({
+                  owner,
+                  repo,
+                  pull_number: prNumber,
+                  merge_method: 'squash',
+                  commit_title: `${pr.title} (#${prNumber})`,
+                });
+                console.log(`PR #${prNumber}: MERGED`);
+              } catch (e) {
+                console.log(`PR #${prNumber}: merge failed — ${e.message}`);
+              }
+            }

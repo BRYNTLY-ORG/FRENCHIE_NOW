@@ -1,0 +1,43 @@
+name: Dependabot auto-approve
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  pull-requests: write
+  contents: read
+
+jobs:
+  auto-approve:
+    runs-on: [self-hosted, macOS, num5]
+    if: github.actor == 'dependabot[bot]'
+    steps:
+      - name: Generate GitHub App token
+        id: app-token
+        if: ${{ vars.AGENT_APP_ID != '' }}
+        uses: actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3 # v3.1.1
+        with:
+          app-id: ${{ vars.AGENT_APP_ID }}
+          private-key: ${{ secrets.AGENT_APP_PRIVATE_KEY }}
+          
+      - name: Approve Dependabot PR
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
+        with:
+          github-token: ${{ steps.app-token.outputs.token || github.token || secrets.AGENT_PAT }}
+          script: |
+            const { owner, repo } = context.repo;
+            const prNumber = context.payload.pull_request.number;
+            
+            try {
+              await github.rest.pulls.createReview({
+                owner,
+                repo,
+                pull_number: prNumber,
+                event: 'APPROVE',
+                body: 'Auto-approved Dependabot PR to satisfy branch protection rules.'
+              });
+              console.log(`Successfully approved Dependabot PR #${prNumber}`);
+            } catch (error) {
+              console.log(`Failed to approve Dependabot PR #${prNumber}: ${error.message}`);
+            }

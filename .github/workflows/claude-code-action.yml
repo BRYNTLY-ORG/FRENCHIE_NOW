@@ -1,0 +1,78 @@
+name: Claude Code Review
+
+on:
+  pull_request_target:
+    types: [opened, reopened, ready_for_review, synchronize]
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+env:
+  OLLAMA_AGENT_ASSIGNEES: ${{ vars.OLLAMA_AGENT_ASSIGNEES || '' }}
+
+jobs:
+  claude-review:
+    if: |
+      (github.event_name == 'pull_request_target' && !github.event.pull_request.draft) ||
+      (github.event_name == 'issue_comment' && github.event.issue.pull_request && contains(github.event.comment.body, '@claude')) ||
+      (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude'))
+    runs-on: [self-hosted, macOS, num5]
+    steps:
+      - name: Generate GitHub App token
+        id: app-token
+        if: ${{ vars.AGENT_APP_ID != '' }}
+        uses: actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3 # v3.1.1
+        with:
+          app-id: ${{ vars.AGENT_APP_ID }}
+          private-key: ${{ secrets.AGENT_APP_PRIVATE_KEY }}
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: ${{ github.event.pull_request.base.sha || github.event.repository.default_branch }}
+          sparse-checkout: .github/actions
+      - name: Ensure agent assignees
+        uses: ./.github/actions/ensure-agent-assignees
+        with:
+          github-token: ${{ steps.app-token.outputs.token || github.token || secrets.AGENT_PAT }}
+          pr-number: ${{ github.event.pull_request.number || github.event.issue.number }}
+          agent-assignees: ${{ env.OLLAMA_AGENT_ASSIGNEES }}
+
+      - name: Fetch PROD_SPEC.md
+        id: fetch-spec
+        run: |
+          if [ -f "PROD_SPEC.md" ]; then
+            {
+              echo "spec<<EOF"
+              cat PROD_SPEC.md
+              echo "EOF"
+            } >> "$GITHUB_OUTPUT"
+          else
+            echo "spec=" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Claude Code Action
+        continue-on-error: true
+        uses: anthropics/claude-code-action@5fb899572b81d2bb648d4d187173a2f423a9677c # v1.0.96
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ steps.app-token.outputs.token || github.token || secrets.AGENT_PAT }}
+          trigger_phrase: "@claude"
+          prompt: |
+            You are a code reviewer working alongside Copilot, Gemini, Codex, and Sentry.
+            
+            ### Repository Contract (PROD_SPEC.md)
+            ${{ steps.fetch-spec.outputs.spec != '' && steps.fetch-spec.outputs.spec || 'No PROD_SPEC.md found.' }}
+
+            ### Instructions
+            Focus on what the other reviewers are likely to miss:
+            - **Contract Compliance**: Does this PR risk the SLA targets or break the Critical Path defined in PROD_SPEC.md?
+            - Scope and intent verification — does the change actually solve the stated problem?
+            - Edge cases and failure paths that automated tools skip
+            - Cross-file regressions and subtle interaction bugs
+            - Whether applied fixes from other agents dropped any intent
+            Keep your review terse and material. Skip style nits and praise.

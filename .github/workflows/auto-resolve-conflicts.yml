@@ -1,0 +1,291 @@
+name: Auto-resolve merge conflicts
+
+on:
+  push:
+    branches: [main, master]
+  schedule:
+    - cron: '0 */8 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+env:
+  OLLAMA_AGENT_ASSIGNEES: ${{ vars.OLLAMA_AGENT_ASSIGNEES || '' }}
+
+jobs:
+  check-conflicts:
+    runs-on: [self-hosted, macOS, num5]
+    steps:
+      - name: Generate GitHub App token
+        id: app-token
+        if: ${{ vars.AGENT_APP_ID != '' }}
+        uses: actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3 # v3.1.1
+        with:
+          app-id: ${{ vars.AGENT_APP_ID }}
+          private-key: ${{ secrets.AGENT_APP_PRIVATE_KEY }}
+      - name: Detect conflicts, assign agents to resolve and review
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
+        with:
+          github-token: ${{ steps.app-token.outputs.token || secrets.AGENT_PAT || secrets.GITHUB_TOKEN }}
+          script: |
+            const { owner, repo } = context.repo;
+            const repoFullName = `${owner}/${repo}`;
+            const extraAgentMentions = '@gemini-code-assist[bot] @chatgpt-codex-connector[bot] @sentry[bot]';
+
+            // Review bot slugs — must match .github/actions/ensure-agent-assignees/action.yml REVIEW_BOTS
+            const REVIEW_BOT_SLUGS = ['copilot', 'gemini-code-assist', 'chatgpt-codex-connector', 'claude', 'openai-code-agent'];
+            const REVIEW_BOT_LOGINS = ['Copilot', 'gemini-code-assist[bot]', 'chatgpt-codex-connector[bot]', 'Claude', 'Codex'];
+
+            async function ensureAgentAssignees(prNum) {
+              try {
+                await github.rest.issues.addAssignees({ owner, repo, issue_number: prNum, assignees: REVIEW_BOT_LOGINS }).catch(() => {});
+                for (const slug of REVIEW_BOT_SLUGS) {
+                  await github.rest.pulls.requestReviewers({ owner, repo, pull_number: prNum, reviewers: [slug] }).catch(() => {});
+                }
+                console.log(`PR #${prNum}: ensured agent assignees`);
+              } catch (e) { console.log(`PR #${prNum}: agent assignee sync: ${e.message}`); }
+            }
+
+            const prs = await github.paginate(github.rest.pulls.list, {
+              owner,
+              repo,
+              state: 'open',
+              per_page: 100,
+            });
+
+            function buildHelperPrBody(fullPr) {
+              const helperMarker = `<!-- conflict-helper-pr:${fullPr.number} -->`;
+              return [
+                helperMarker,
+                `This draft helper PR was opened automatically because #${fullPr.number} has merge conflicts with \`${fullPr.base.ref}\`.`,
+                '',
+                `Original PR: #${fullPr.number}`,
+                `Target branch to repair: \`${fullPr.head.ref}\``,
+                '',
+                'Use this PR as the conflict-resolution work branch: merge the latest base changes, resolve conflicts carefully, run tests, and merge this helper PR back into the original PR branch.',
+                '',
+                '@copilot Please resolve the conflict here, preserving the intent of both the PR changes and the latest base branch updates.',
+                `${extraAgentMentions} If you are installed for this repository and relevant to the conflict, also inspect this helper PR and contribute any useful fixes or diagnostics.`,
+                '@claude Review the resolution for dropped logic, edge cases, regressions, and whether the helper PR stays tightly scoped.',
+                '@codex Also review correctness, test coverage, and whether anything still needs a separate follow-up after this helper PR lands.',
+              ].join('\n');
+            }
+
+            async function ensureHelperPr(fullPr) {
+              if (fullPr.head.repo?.full_name !== repoFullName) {
+                return {
+                  helperPr: null,
+                  helperBranch: null,
+                  created: false,
+                  reason: 'fork',
+                };
+              }
+
+              const helperBranch = `auto/conflict-pr-${fullPr.number}`;
+              let helperPr = prs.find(candidate =>
+                candidate.number !== fullPr.number &&
+                candidate.head?.repo?.full_name === repoFullName &&
+                candidate.head.ref === helperBranch &&
+                candidate.base.ref === fullPr.head.ref
+              ) || null;
+
+              if (helperPr) {
+                await github.rest.pulls.update({
+                  owner,
+                  repo,
+                  pull_number: helperPr.number,
+                  title: `Resolve conflicts for #${fullPr.number}: ${fullPr.title}`,
+                  body: buildHelperPrBody(fullPr),
+                });
+                return { helperPr, helperBranch, created: false, reason: null };
+              }
+
+              try {
+                await github.rest.git.getRef({
+                  owner,
+                  repo,
+                  ref: `heads/${helperBranch}`,
+                });
+              } catch (error) {
+                if (error.status !== 404) throw error;
+                await github.rest.git.createRef({
+                  owner,
+                  repo,
+                  ref: `refs/heads/${helperBranch}`,
+                  sha: fullPr.head.sha,
+                });
+              }
+
+              const { data: comparison } = await github.rest.repos.compareCommitsWithBasehead({
+                owner,
+                repo,
+                basehead: `${fullPr.head.ref}...${helperBranch}`,
+              });
+
+              if ((comparison.ahead_by || 0) === 0) {
+                const { data: headCommit } = await github.rest.git.getCommit({
+                  owner,
+                  repo,
+                  commit_sha: fullPr.head.sha,
+                });
+                const { data: seedCommit } = await github.rest.git.createCommit({
+                  owner,
+                  repo,
+                  message: `chore: prepare conflict helper PR for #${fullPr.number}`,
+                  tree: headCommit.tree.sha,
+                  parents: [fullPr.head.sha],
+                });
+                await github.rest.git.updateRef({
+                  owner,
+                  repo,
+                  ref: `heads/${helperBranch}`,
+                  sha: seedCommit.sha,
+                  force: true,
+                });
+              }
+
+              const { data: createdHelperPr } = await github.rest.pulls.create({
+                owner,
+                repo,
+                title: `Resolve conflicts for #${fullPr.number}: ${fullPr.title}`,
+                head: helperBranch,
+                base: fullPr.head.ref,
+                draft: true,
+                body: buildHelperPrBody(fullPr),
+              });
+
+              prs.push(createdHelperPr);
+
+              await ensureAgentAssignees(createdHelperPr.number);
+
+              return {
+                helperPr: createdHelperPr,
+                helperBranch,
+                created: true,
+                reason: null,
+              };
+            }
+
+            async function ensureHelperComment(fullPr, helperPr) {
+              const helperMarker = `<!-- conflict-helper-pr:${fullPr.number} -->`;
+              const comments = await github.paginate(github.rest.issues.listComments, {
+                owner,
+                repo,
+                issue_number: helperPr.number,
+                per_page: 100,
+              });
+              const existing = comments.find(comment => comment.body?.includes(helperMarker));
+              const body = [
+                helperMarker,
+                `This helper PR was opened automatically for conflict resolution on #${fullPr.number}.`,
+                '',
+                `Merge the latest \`${fullPr.base.ref}\` changes into \`${fullPr.head.ref}\` here, resolve conflicts carefully, run tests, and merge this helper PR back into the original PR branch.`,
+                '',
+                '@copilot Please perform the conflict resolution work in this PR.',
+                `${extraAgentMentions} If you are installed for this repository and relevant to the conflict, also inspect this helper PR and contribute any useful fixes or diagnostics.`,
+                '@claude Review the resolved branch for dropped code, logic errors, regressions, and scope creep.',
+                '@codex Also review correctness, test coverage, and whether any remaining work needs another follow-up PR.',
+              ].join('\n');
+
+              if (existing) {
+                await github.rest.issues.updateComment({
+                  owner,
+                  repo,
+                  comment_id: existing.id,
+                  body,
+                });
+                return;
+              }
+
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number: helperPr.number,
+                body,
+              });
+            }
+
+            for (const pr of prs) {
+              if (pr.head?.ref?.startsWith('auto/conflict-pr-')) continue;
+
+              let { data: fullPr } = await github.rest.pulls.get({
+                owner,
+                repo,
+                pull_number: pr.number,
+              });
+
+              if (fullPr.mergeable === null) {
+                await new Promise(resolve => setTimeout(resolve, 5000));
+                ({ data: fullPr } = await github.rest.pulls.get({
+                  owner,
+                  repo,
+                  pull_number: pr.number,
+                }));
+              }
+
+              if (fullPr.mergeable !== false) continue;
+
+              const marker = `<!-- merge-conflict-request:${pr.number} -->`;
+              const comments = await github.paginate(github.rest.issues.listComments, {
+                owner,
+                repo,
+                issue_number: pr.number,
+                per_page: 100,
+              });
+              const existingConflictComment = comments.find(comment => comment.body?.includes(marker));
+              const dayMs = 24 * 60 * 60 * 1000;
+              const alreadyHandled = existingConflictComment &&
+                (Date.now() - new Date(existingConflictComment.created_at).getTime()) < dayMs;
+
+              const helperResult = await ensureHelperPr(fullPr);
+              if (helperResult.helperPr) {
+                await ensureHelperComment(fullPr, helperResult.helperPr);
+                await ensureAgentAssignees(helperResult.helperPr.number);
+              }
+
+              if (alreadyHandled && !helperResult.created) continue;
+
+              await ensureAgentAssignees(pr.number);
+
+              const helperLine = helperResult.helperPr
+                ? `A dedicated draft helper PR is open: #${helperResult.helperPr.number}.`
+                : helperResult.reason === 'fork'
+                  ? `This PR head lives in a fork, so GitHub cannot open a repository-owned helper PR targeting \`${fullPr.head.ref}\`.`
+                  : 'A dedicated helper PR could not be created automatically; agents should work directly in this PR branch.';
+
+              const body = [
+                marker,
+                `This PR has merge conflicts with \`${fullPr.base.ref}\`.`,
+                helperLine,
+                '',
+                '@copilot Please resolve the merge conflicts without dropping either side of the intended behavior.',
+                `${extraAgentMentions} If you are installed for this repository and relevant to the conflict, also inspect the resolution path and contribute any useful fixes or diagnostics.`,
+                helperResult.helperPr
+                  ? `Use #${helperResult.helperPr.number} as the conflict-resolution work branch, run tests there, and merge it back into \`${fullPr.head.ref}\` once it is clean.`
+                  : 'Resolve the conflicts on this PR branch directly, then run the smallest meaningful test surface to verify the branch still behaves correctly.',
+                '',
+                '@claude Review the final resolution for dropped logic, regressions, and whether the conflict work stayed tightly scoped.',
+                '@codex Also review correctness, test coverage, and whether any extra follow-up PR is still required after the conflict lands.',
+              ].join('\n');
+
+              if (existingConflictComment) {
+                await github.rest.issues.updateComment({
+                  owner,
+                  repo,
+                  comment_id: existingConflictComment.id,
+                  body,
+                });
+              } else {
+                await github.rest.issues.createComment({
+                  owner,
+                  repo,
+                  issue_number: pr.number,
+                  body,
+                });
+              }
+
+              await new Promise(resolve => setTimeout(resolve, 1500));
+            }

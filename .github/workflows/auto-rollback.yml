@@ -1,0 +1,69 @@
+name: Autonomous Rollback
+
+on:
+  workflow_dispatch:
+    inputs:
+      commit_sha:
+        description: "The regression commit SHA to revert"
+        required: true
+      incident_number:
+        description: "The issue number of the related incident"
+        required: true
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  rollback:
+    runs-on: [self-hosted, macOS, num5]
+    steps:
+      - name: Generate GitHub App token
+        id: app-token
+        if: ${{ vars.AGENT_APP_ID != '' }}
+        uses: actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3 # v3.1.1
+        with:
+          app-id: ${{ vars.AGENT_APP_ID }}
+          private-key: ${{ secrets.AGENT_APP_PRIVATE_KEY }}
+
+      - name: Checkout Repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          token: ${{ steps.app-token.outputs.token || secrets.AGENT_PAT || github.token }}
+          fetch-depth: 0
+
+      - name: Perform Revert
+        env:
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token || secrets.AGENT_PAT || github.token }}
+        run: |
+          SHA="${{ github.event.inputs.commit_sha }}"
+          INCIDENT="${{ github.event.inputs.incident_number }}"
+          BRANCH="fix/rollback-${SHA:0:7}"
+          
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+          git checkout -b "$BRANCH"
+          
+          echo "Reverting $SHA..."
+          if git revert --no-edit "$SHA"; then
+            git push origin "$BRANCH"
+            
+            PR_URL=$(gh pr create \
+              --title "[AUTONOMOUS ROLLBACK] Revert $SHA" \
+              --body "This PR was automatically generated to recover from a production health failure detected in Incident #$INCIDENT.
+              
+              **Target Regression**: $SHA
+              **Triggered By**: Agentic Rollback Protocol" \
+              --label "incident-fix,auto-merge")
+            
+            gh pr comment "$PR_URL" --body "Enabling auto-merge for this recovery PR."
+            gh pr merge "$PR_URL" --auto --squash
+            
+            gh issue comment "$INCIDENT" --body "✅ **Autonomous Rollback Initiated**: Reverted $SHA in $PR_URL. Service health will be re-verified upon deployment."
+          else
+            echo "Error: Git revert failed. Manual resolution required."
+            gh issue comment "$INCIDENT" --body "❌ **Rollback Failed**: Could not automatically revert $SHA due to conflicts. Human attention required."
+            exit 1
+          fi

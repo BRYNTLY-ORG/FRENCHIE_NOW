@@ -1,0 +1,329 @@
+name: Auto-assign agents to PRs and issues
+
+on:
+  pull_request_target:
+    types: [opened, reopened, ready_for_review, synchronize, converted_to_draft]
+  issues:
+    types: [opened, reopened, transferred]
+  pull_request_review:
+    types: [submitted, dismissed]
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: auto-assign-agents-${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && 'sweep' || github.event.pull_request.number || github.event.issue.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name != 'schedule' && github.event_name != 'workflow_dispatch' }}
+
+env:
+  OLLAMA_AGENT_ASSIGNEES: ${{ vars.OLLAMA_AGENT_ASSIGNEES || '' }}
+
+jobs:
+  assign-single-pr:
+    if: github.event_name == 'pull_request_target' || github.event_name == 'pull_request_review'
+    runs-on: [self-hosted, macOS, num5]
+    steps:
+      - name: Generate GitHub App token
+        id: app-token
+        if: ${{ vars.AGENT_APP_ID != '' }}
+        uses: actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3 # v3.1.1
+        with:
+          app-id: ${{ vars.AGENT_APP_ID }}
+          private-key: ${{ secrets.AGENT_APP_PRIVATE_KEY }}
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          sparse-checkout: .github/actions
+      - name: Ensure agent assignees
+        uses: ./.github/actions/ensure-agent-assignees
+        with:
+          github-token: ${{ steps.app-token.outputs.token || secrets.AGENT_PAT || secrets.GITHUB_TOKEN }}
+          pr-number: ${{ github.event.pull_request.number }}
+          agent-assignees: ${{ env.OLLAMA_AGENT_ASSIGNEES }}
+
+  assign-single-issue:
+    if: github.event_name == 'issues'
+    runs-on: [self-hosted, macOS, num5]
+    steps:
+      - name: Generate GitHub App token
+        id: app-token
+        if: ${{ vars.AGENT_APP_ID != '' }}
+        uses: actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3 # v3.1.1
+        with:
+          app-id: ${{ vars.AGENT_APP_ID }}
+          private-key: ${{ secrets.AGENT_APP_PRIVATE_KEY }}
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          sparse-checkout: .github/actions
+      - name: Ensure agent assignees
+        uses: ./.github/actions/ensure-agent-assignees
+        with:
+          github-token: ${{ steps.app-token.outputs.token || secrets.AGENT_PAT || secrets.GITHUB_TOKEN }}
+          pr-number: ${{ github.event.issue.number }}
+          item-type: issue
+          agent-assignees: ${{ env.OLLAMA_AGENT_ASSIGNEES }}
+
+  sweep-all-prs-and-issues:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: [self-hosted, macOS, num5]
+    steps:
+      - name: Generate GitHub App token
+        id: app-token
+        if: ${{ vars.AGENT_APP_ID != '' }}
+        uses: actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3 # v3.1.1
+        with:
+          app-id: ${{ vars.AGENT_APP_ID }}
+          private-key: ${{ secrets.AGENT_APP_PRIVATE_KEY }}
+      - name: Sweep open PRs and issues
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
+        with:
+          github-token: ${{ steps.app-token.outputs.token || secrets.AGENT_PAT || secrets.GITHUB_TOKEN }}
+          script: |
+            const { owner, repo } = context.repo;
+
+            // Mirror of REVIEW_BOTS in .github/actions/ensure-agent-assignees/action.yml
+            const REVIEW_BOTS = [
+              { slug: 'copilot', login: 'Copilot' },
+              { slug: 'gemini-code-assist', login: 'gemini-code-assist[bot]' },
+              { slug: 'chatgpt-codex-connector', login: 'chatgpt-codex-connector[bot]' },
+              { slug: 'claude', login: 'Claude' },
+              { slug: 'openai-code-agent', login: 'Codex' },
+            ];
+            const configured = new Set(
+              (process.env.OLLAMA_AGENT_ASSIGNEES || '')
+                .split(',')
+                .map(item => item.trim())
+                .filter(Boolean)
+            );
+            const desiredAssignees = new Set([
+              ...configured,
+              ...REVIEW_BOTS.map(bot => bot.login),
+            ]);
+
+            // Best-effort App-installation discovery; needs an installation
+            // token. Failures are non-fatal — used only to populate the summary.
+            const installedAppSlugs = new Set();
+            try {
+              const installs = await github.paginate('GET /repos/{owner}/{repo}/installation', { owner, repo });
+              const list = Array.isArray(installs) ? installs : [installs].filter(Boolean);
+              for (const i of list) {
+                const slug = i?.app_slug || i?.app?.slug;
+                if (slug) installedAppSlugs.add(slug);
+              }
+            } catch (err) {
+              console.log(`App installation discovery skipped: ${err.message}`);
+            }
+            if (installedAppSlugs.size > 0) {
+              console.log(`Installed App slugs visible to token: ${[...installedAppSlugs].join(', ')}`);
+            }
+
+            let collaborators = [];
+            try {
+              collaborators = await github.paginate(
+                github.rest.repos.listCollaborators,
+                { owner, repo, per_page: 100 }
+              );
+            } catch (err) {
+              console.log(`Unable to list collaborators: ${err.message}`);
+            }
+            const collaboratorLogins = new Set(collaborators.map(c => c.login));
+            const humanAssignees = [...new Set(
+              collaborators
+                .filter(c => desiredAssignees.has(c.login))
+                .map(c => c.login)
+            )];
+
+            // Resolve a bot login to its node id. GraphQL user(login:) often
+            // returns null for App bots when called with GITHUB_TOKEN.
+            // REST GET /users/{login} returns node_id for any public user
+            // including App bots without auth, so we use it as fallback.
+            // This was the root cause of silent App-bot skips.
+            const botNodeIdCache = new Map();
+            async function lookupBotNodeId(login) {
+              if (botNodeIdCache.has(login)) return botNodeIdCache.get(login);
+              try {
+                const data = await github.graphql(
+                  `query($login: String!) { user(login: $login) { id } }`,
+                  { login }
+                );
+                if (data?.user?.id) {
+                  botNodeIdCache.set(login, data.user.id);
+                  return data.user.id;
+                }
+              } catch {
+                // fall through to REST
+              }
+              try {
+                const { data } = await github.rest.users.getByUsername({ username: login });
+                if (data?.node_id) {
+                  botNodeIdCache.set(login, data.node_id);
+                  return data.node_id;
+                }
+              } catch (error) {
+                if (error.status !== 404) {
+                  console.log(`Lookup for ${login}: ${error.message}`);
+                }
+              }
+              botNodeIdCache.set(login, null);
+              return null;
+            }
+
+            async function prNodeIdFor(prNumber) {
+              const fetchOnce = async () => {
+                try {
+                  const data = await github.graphql(
+                    `query($owner: String!, $repo: String!, $number: Int!) {
+                      repository(owner: $owner, name: $repo) {
+                        pullRequest(number: $number) { id }
+                      }
+                    }`,
+                    { owner, repo, number: prNumber }
+                  );
+                  return data?.repository?.pullRequest?.id || null;
+                } catch (error) {
+                  console.log(`PR #${prNumber}: could not fetch node id — ${error.message}`);
+                  return null;
+                }
+              };
+              let id = await fetchOnce();
+              if (!id) {
+                await new Promise(r => setTimeout(r, 1500));
+                id = await fetchOnce();
+                if (id) console.log(`PR #${prNumber}: PR node id fetched on retry`);
+              }
+              return id;
+            }
+
+            const sweepStats = { requested: 0, skipped: 0, perBot: {} };
+            for (const bot of REVIEW_BOTS) {
+              sweepStats.perBot[bot.login] = { requested: 0, skipped: 0, lastReason: null };
+            }
+
+            async function processItem(itemNumber, isPr) {
+              if (humanAssignees.length > 0) {
+                try {
+                  await github.rest.issues.addAssignees({
+                    owner, repo, issue_number: itemNumber, assignees: humanAssignees,
+                  });
+                  console.log(`#${itemNumber}: assigned humans ${humanAssignees.join(', ')}`);
+                } catch (error) {
+                  console.log(`#${itemNumber}: bulk assign failed — ${error.message}`);
+                  for (const a of humanAssignees) {
+                    try {
+                      await github.rest.issues.addAssignees({
+                        owner, repo, issue_number: itemNumber, assignees: [a],
+                      });
+                    } catch (err) {
+                      console.log(`#${itemNumber}: could not assign ${a} — ${err.message}`);
+                    }
+                  }
+                }
+              }
+              if (!isPr) return;
+              const prNodeId = await prNodeIdFor(itemNumber);
+
+              await Promise.all(REVIEW_BOTS.map(async (bot) => {
+                const visiblyUnavailable = installedAppSlugs.size > 0 &&
+                  !installedAppSlugs.has(bot.slug) &&
+                  !collaboratorLogins.has(bot.login);
+                if (visiblyUnavailable) {
+                  console.log(`PR #${itemNumber}: ${bot.login} not available as collaborator/app, skipping`);
+                  sweepStats.perBot[bot.login].skipped++;
+                  sweepStats.perBot[bot.login].lastReason = 'not collaborator or installed app';
+                  sweepStats.skipped++;
+                  return;
+                }
+                try {
+                  await github.rest.pulls.requestReviewers({
+                    owner, repo, pull_number: itemNumber, reviewers: [bot.slug],
+                  });
+                  console.log(`PR #${itemNumber}: requested review from ${bot.slug}`);
+                  sweepStats.perBot[bot.login].requested++;
+                  sweepStats.requested++;
+                  return;
+                } catch (error) {
+                  console.log(`PR #${itemNumber}: REST review request for ${bot.slug} failed — ${error.message}`);
+                }
+                if (!prNodeId) {
+                  sweepStats.perBot[bot.login].skipped++;
+                  sweepStats.perBot[bot.login].lastReason = 'no PR node id';
+                  sweepStats.skipped++;
+                  return;
+                }
+                const botNodeId = await lookupBotNodeId(bot.login);
+                if (!botNodeId) {
+                  console.log(`PR #${itemNumber}: ${bot.login} not resolvable, skipping`);
+                  sweepStats.perBot[bot.login].skipped++;
+                  sweepStats.perBot[bot.login].lastReason = 'user lookup returned null';
+                  sweepStats.skipped++;
+                  return;
+                }
+                try {
+                  await github.graphql(
+                    `mutation($prId: ID!, $userIds: [ID!]!) {
+                      requestReviews(input: { pullRequestId: $prId, userIds: $userIds, union: true }) {
+                        pullRequest { id }
+                      }
+                    }`,
+                    { prId: prNodeId, userIds: [botNodeId] }
+                  );
+                  console.log(`PR #${itemNumber}: requested review from ${bot.login} (via GraphQL)`);
+                  sweepStats.perBot[bot.login].requested++;
+                  sweepStats.requested++;
+                } catch (error) {
+                  console.log(`PR #${itemNumber}: GraphQL review request for ${bot.login} failed — ${error.message}`);
+                  sweepStats.perBot[bot.login].skipped++;
+                  sweepStats.perBot[bot.login].lastReason = error.message;
+                  sweepStats.skipped++;
+                }
+              }));
+            }
+
+            const prs = await github.paginate(github.rest.pulls.list, {
+              owner, repo, state: 'open', per_page: 100,
+            });
+            for (const pr of prs) {
+              await processItem(pr.number, true);
+              await new Promise(r => setTimeout(r, 1000));
+            }
+            const issues = await github.paginate(github.rest.issues.listForRepo, {
+              owner, repo, state: 'open', per_page: 100,
+            });
+            const nonPrIssues = issues.filter(i => !i.pull_request);
+            for (const issue of nonPrIssues) {
+              await processItem(issue.number, false);
+              await new Promise(r => setTimeout(r, 1000));
+            }
+            console.log(`Sweep complete: processed ${prs.length} PRs and ${nonPrIssues.length} issues`);
+
+            try {
+              const rows = REVIEW_BOTS.map(bot => {
+                const s = sweepStats.perBot[bot.login];
+                const installed = installedAppSlugs.size === 0
+                  ? 'unknown'
+                  : (installedAppSlugs.has(bot.slug) ? 'yes' : 'no');
+                return [bot.login, String(s.requested), String(s.skipped), installed, s.lastReason || ''];
+              });
+              await core.summary
+                .addHeading('Auto-assign sweep summary', 2)
+                .addRaw(`Processed ${prs.length} PRs and ${nonPrIssues.length} issues. `)
+                .addRaw(`Total review requests: ${sweepStats.requested}, total skips: ${sweepStats.skipped}.\n\n`)
+                .addTable([
+                  [
+                    { data: 'Bot login', header: true },
+                    { data: 'Requested', header: true },
+                    { data: 'Skipped', header: true },
+                    { data: 'App installed', header: true },
+                    { data: 'Last skip reason', header: true },
+                  ],
+                  ...rows,
+                ])
+                .write();
+            } catch (err) {
+              console.log(`Could not write workflow summary: ${err.message}`);
+            }

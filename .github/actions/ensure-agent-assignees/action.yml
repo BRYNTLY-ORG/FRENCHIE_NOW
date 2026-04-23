@@ -1,0 +1,244 @@
+name: Ensure agent assignees and reviewers
+description: |
+  Single source of truth for PR and issue AI agent assignment.
+  Adds the known assignable agent accounts to PRs/issues and requests reviews
+  from the review-capable apps on PRs.
+
+inputs:
+  github-token:
+    description: GitHub token with issues:write and pull-requests:write scopes
+    required: true
+  pr-number:
+    description: PR or issue number to assign agents to
+    required: true
+  item-type:
+    description: "'pr' (default) or 'issue' — controls whether reviewer requests are made"
+    required: false
+    default: 'pr'
+  agent-assignees:
+    description: Comma-separated list of additional agent logins to assign (from OLLAMA_AGENT_ASSIGNEES)
+    required: false
+    default: ''
+  exclude-login:
+    description: Login to exclude from assignees (typically the PR author so only bots appear)
+    required: false
+    default: ''
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
+      with:
+        github-token: ${{ inputs.github-token }}
+        script: |
+          const { owner, repo } = context.repo;
+          const itemNumber = parseInt('${{ inputs.pr-number }}', 10);
+          if (!itemNumber || isNaN(itemNumber)) {
+            console.log('No valid PR/issue number provided, skipping agent assignment');
+            return;
+          }
+          const isPr = '${{ inputs.item-type }}' !== 'issue';
+          const label = isPr ? 'PR' : 'Issue';
+
+          // ── Single source of truth ────────────────────────────────
+          // slug  = used by requestReviewers API (PRs only)
+          // login = used by addAssignees API (canonical assignee identity)
+          const REVIEW_BOTS = [
+            { slug: 'copilot',                 login: 'Copilot' },
+            { slug: 'gemini-code-assist',      login: 'gemini-code-assist[bot]' },
+            { slug: 'chatgpt-codex-connector', login: 'chatgpt-codex-connector[bot]' },
+            { slug: 'claude',                  login: 'Claude' },
+            { slug: 'openai-code-agent',       login: 'Codex' },
+          ];
+          const ASSIGNEE_LOGINS = [...new Set(REVIEW_BOTS.map(bot => bot.login))];
+          // ──────────────────────────────────────────────────────────
+
+          const configured = new Set(
+            ('${{ inputs.agent-assignees }}')
+              .split(',')
+              .map(s => s.trim())
+              .filter(Boolean)
+          );
+
+          const excludedLogins = new Set(['Bryntly']);
+          const excludedReviewers = [...excludedLogins];
+          const excludeLogin = '${{ inputs.exclude-login }}'.trim();
+          if (excludeLogin) excludedLogins.add(excludeLogin);
+
+          const allAssignees = [...new Set([...configured, ...ASSIGNEE_LOGINS])]
+            .filter(assignee => !excludedLogins.has(assignee));
+
+          const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+          const RETRY_DELAYS_MS = [10000, 30000, 120000];
+          const assigneeNodeIdByLogin = new Map(Object.entries({
+            'Copilot': 'BOT_kgDOC9w8XQ',
+            'gemini-code-assist[bot]': 'BOT_kgDOCow4Ng',
+            'chatgpt-codex-connector[bot]': 'BOT_kgDOC98s_g',
+            'Claude': 'BOT_kgDODnPHJg',
+            'Codex': 'BOT_kgDODnSAjQ',
+          }));
+
+          async function getCurrentIssueState() {
+            const { data } = await github.rest.issues.get({
+              owner,
+              repo,
+              issue_number: itemNumber,
+            });
+            return data;
+          }
+
+          async function resolveAssigneeNodeIds(logins) {
+            const resolved = [];
+            for (const login of logins) {
+              if (!assigneeNodeIdByLogin.has(login)) {
+                try {
+                  const { data } = await github.rest.users.getByUsername({ username: login });
+                  assigneeNodeIdByLogin.set(login, data.node_id);
+                } catch (error) {
+                  console.log(`${label} #${itemNumber}: could not resolve node id for ${login} — ${error.message}`);
+                  continue;
+                }
+              }
+              resolved.push({ login, nodeId: assigneeNodeIdByLogin.get(login) });
+            }
+            return resolved;
+          }
+
+          async function ensureAssignees(targetAssignees) {
+            if (targetAssignees.length === 0) return [];
+
+            const issueState = await getCurrentIssueState();
+            const currentAssignees = new Set((issueState.assignees || []).map(assignee => assignee.login));
+            const missingBeforeMutation = targetAssignees.filter(assignee => !currentAssignees.has(assignee));
+            if (missingBeforeMutation.length === 0) return [];
+
+            const resolvedAssignees = await resolveAssigneeNodeIds(missingBeforeMutation);
+            const unresolvedAssignees = missingBeforeMutation.filter(
+              login => !resolvedAssignees.some(entry => entry.login === login)
+            );
+
+            if (resolvedAssignees.length > 0) {
+              try {
+                await github.graphql(
+                  `
+                    mutation($assignableId: ID!, $assigneeIds: [ID!]!) {
+                      addAssigneesToAssignable(input: {
+                        assignableId: $assignableId,
+                        assigneeIds: $assigneeIds
+                      }) {
+                        assignable {
+                          __typename
+                          ... on Issue { id }
+                          ... on PullRequest { id }
+                        }
+                      }
+                    }
+                  `,
+                  {
+                    assignableId: issueState.node_id,
+                    assigneeIds: resolvedAssignees.map(entry => entry.nodeId),
+                  }
+                );
+                console.log(`${label} #${itemNumber}: requested assignees ${resolvedAssignees.map(entry => entry.login).join(', ')}`);
+              } catch (error) {
+                console.log(`${label} #${itemNumber}: GraphQL assign failed — ${error.message}, falling back to REST`);
+                for (const assignee of resolvedAssignees.map(entry => entry.login)) {
+                  try {
+                    await github.rest.issues.addAssignees({
+                      owner,
+                      repo,
+                      issue_number: itemNumber,
+                      assignees: [assignee],
+                    });
+                    console.log(`${label} #${itemNumber}: requested ${assignee} via REST fallback`);
+                  } catch (err) {
+                    console.log(`${label} #${itemNumber}: could not request ${assignee} via REST fallback — ${err.message}`);
+                  }
+                }
+              }
+            }
+
+            const updatedState = await getCurrentIssueState();
+            const updatedAssignees = new Set((updatedState.assignees || []).map(assignee => assignee.login));
+            return [...new Set([
+              ...unresolvedAssignees,
+              ...targetAssignees.filter(assignee => !updatedAssignees.has(assignee)),
+            ])];
+          }
+
+          async function getCurrentAssigneeLogins() {
+            const issueState = await getCurrentIssueState();
+            return new Set((issueState.assignees || []).map(assignee => assignee.login));
+          }
+
+          async function removeExcludedReviewRequests() {
+            if (excludedReviewers.length === 0) return;
+
+            try {
+              await github.rest.pulls.removeRequestedReviewers({
+                owner,
+                repo,
+                pull_number: itemNumber,
+                reviewers: excludedReviewers,
+              });
+              console.log(`PR #${itemNumber}: removed excluded reviewer requests — ${excludedReviewers.join(', ')}`);
+            } catch (error) {
+              console.log(`PR #${itemNumber}: no excluded reviewer requests removed — ${error.message}`);
+            }
+          }
+
+          if (allAssignees.length > 0) {
+            let missingAssignees = await ensureAssignees(allAssignees);
+
+            if (missingAssignees.length > 0) {
+              console.log(`${label} #${itemNumber}: GitHub kept ${allAssignees.length - missingAssignees.length}/${allAssignees.length} assignees after the first pass; retrying missing ${missingAssignees.join(', ')}`);
+            }
+
+            for (const [index, delayMs] of RETRY_DELAYS_MS.entries()) {
+              if (missingAssignees.length === 0) break;
+              console.log(`${label} #${itemNumber}: retry ${index + 1}/${RETRY_DELAYS_MS.length} in ${Math.round(delayMs / 1000)}s for ${missingAssignees.join(', ')}`);
+              await sleep(delayMs);
+              missingAssignees = await ensureAssignees(missingAssignees);
+            }
+
+            if (missingAssignees.length > 0) {
+              console.log(`${label} #${itemNumber}: still missing assignees after retry — ${missingAssignees.join(', ')}`);
+            } else {
+              console.log(`${label} #${itemNumber}: all desired assignees are now present`);
+            }
+          }
+
+          if (excludedLogins.size > 0) {
+            try {
+              await github.rest.issues.removeAssignees({
+                owner, repo,
+                issue_number: itemNumber,
+                assignees: [...excludedLogins],
+              });
+            } catch {}
+          }
+
+          if (!isPr) return;
+          await removeExcludedReviewRequests();
+          const currentAssigneeLogins = await getCurrentAssigneeLogins();
+          const availableReviewBots = REVIEW_BOTS.filter(bot => currentAssigneeLogins.has(bot.login));
+          const skippedReviewBots = REVIEW_BOTS
+            .filter(bot => !currentAssigneeLogins.has(bot.login))
+            .map(bot => bot.slug);
+
+          if (skippedReviewBots.length > 0) {
+            console.log(`PR #${itemNumber}: skipping reviewer requests for unavailable bots — ${skippedReviewBots.join(', ')}`);
+          }
+
+          for (const bot of availableReviewBots) {
+            try {
+              await github.rest.pulls.requestReviewers({
+                owner, repo,
+                pull_number: itemNumber,
+                reviewers: [bot.slug],
+              });
+              console.log(`PR #${itemNumber}: requested review from ${bot.slug}`);
+            } catch (error) {
+              console.log(`PR #${itemNumber}: review request for ${bot.slug} failed — ${error.message}`);
+            }
+          }
