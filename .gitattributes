@@ -1,0 +1,21 @@
+# Auto detect text files and normalize line endings
+* text=auto
+
+# Shell scripts must use LF
+*.sh text eol=lf
+
+# Python scripts must use LF
+*.py text eol=lf
+
+# JSON files
+*.json text eol=lf
+*.json5 text eol=lf
+
+# Markdown
+*.md text eol=lf
+
+# TOML
+*.toml text eol=lf
+
+# Generated gh-aw lockfiles
+.github/workflows/*.lock.yml linguist-generated=true merge=ours

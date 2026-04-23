@@ -1,0 +1,118 @@
+name: Dispatch PR thread items to agents
+
+on:
+  issue_comment:
+    types: [created, edited]
+  pull_request_review_comment:
+    types: [created, edited]
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+env:
+  OLLAMA_AGENT_ASSIGNEES: ${{ vars.OLLAMA_AGENT_ASSIGNEES || '' }}
+
+jobs:
+  dispatch:
+    if: |
+      github.event.comment.user.type != 'Bot' &&
+      (
+        (github.event_name == 'issue_comment' && github.event.issue.pull_request) ||
+        github.event_name == 'pull_request_review_comment'
+      )
+    runs-on: [self-hosted, macOS, num5]
+    steps:
+      - name: Generate GitHub App token
+        id: app-token
+        if: ${{ vars.AGENT_APP_ID != '' }}
+        uses: actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3 # v3.1.1
+        with:
+          app-id: ${{ vars.AGENT_APP_ID }}
+          private-key: ${{ secrets.AGENT_APP_PRIVATE_KEY }}
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: ${{ github.event.pull_request.base.sha || github.event.repository.default_branch }}
+          sparse-checkout: .github/actions
+      - name: Ensure agent assignees
+        uses: ./.github/actions/ensure-agent-assignees
+        with:
+          github-token: ${{ steps.app-token.outputs.token || secrets.AGENT_PAT || secrets.GITHUB_TOKEN }}
+          pr-number: ${{ github.event.issue.number || github.event.pull_request.number }}
+          agent-assignees: ${{ env.OLLAMA_AGENT_ASSIGNEES }}
+      - name: Dispatch PR thread items to agents
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
+        with:
+          github-token: ${{ steps.app-token.outputs.token || secrets.AGENT_PAT || secrets.GITHUB_TOKEN }}
+          script: |
+            const { owner, repo } = context.repo;
+            const eventName = context.eventName;
+            const extraAgentMentions = '@gemini-code-assist[bot] @chatgpt-codex-connector[bot] @sentry[bot]';
+
+            const prNumber = eventName === 'issue_comment'
+              ? context.payload.issue.number
+              : context.payload.pull_request.number;
+
+            const sourceComment = context.payload.comment;
+
+            if (!sourceComment?.body?.trim()) return;
+            if (sourceComment.user?.type === 'Bot') return;
+            if (sourceComment.body.includes('<!-- thread-dispatch')) return;
+
+            const marker = `<!-- thread-dispatch ${eventName} ${sourceComment.id} -->`;
+            const issueComments = await github.paginate(
+              github.rest.issues.listComments,
+              { owner, repo, issue_number: prNumber, per_page: 100 }
+            );
+            const existing = issueComments.find(comment => comment.body?.includes(marker));
+
+            function sanitizeExcerptLine(line = '') {
+              return line
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/@/g, '@\u200b');
+            }
+
+            const excerptLines = sourceComment.body
+              .split('\n')
+              .map(line => line.trim())
+              .filter(Boolean)
+              .slice(0, 6)
+              .map(sanitizeExcerptLine);
+
+            const isReviewComment = eventName === 'pull_request_review_comment';
+            const safePath = (sourceComment.path || 'review-thread').replace(/`/g, "'");
+            const location = isReviewComment
+              ? `\`${safePath}:${sourceComment.line || sourceComment.original_line || '?'}\``
+              : 'general PR discussion';
+
+            const body = [
+              marker,
+              `New PR thread item captured from @${sourceComment.user.login}.`,
+              '',
+              `Source: ${isReviewComment ? 'review comment' : 'issue comment'} on ${location}.`,
+              '',
+              'Excerpt:',
+              '<pre>',
+              ...(excerptLines.length > 0 ? excerptLines : ['(no excerpt)']),
+              '</pre>',
+              '',
+              '@copilot Please act on this thread item directly. If the right fix belongs in a separate follow-up PR instead of the current branch, create that PR and link it here.',
+              `${extraAgentMentions} If you are installed for this repository and relevant to the request, also inspect this thread item and contribute any useful fixes or diagnostics.`,
+              '@claude Review the request for scope, edge cases, and whether a separate PR is the right vehicle.',
+              '@codex Also assess correctness, regression risk, and whether this thread item is fully handled after the implementation or follow-up PR.',
+            ].join('\n');
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner,
+                repo,
+                comment_id: existing.id,
+                body,
+              });
+              return;
+            }
+
+            await github.rest.issues.createComment({ owner, repo, issue_number: prNumber, body });

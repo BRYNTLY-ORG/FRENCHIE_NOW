@@ -1,0 +1,21 @@
+name: Delete old workflow runs
+
+on:
+  schedule:
+    - cron: '0 0 * * *' # Daily at midnight
+  workflow_dispatch:
+
+permissions:
+  actions: write
+
+jobs:
+  delete-runs:
+    runs-on: [self-hosted, macOS, num5]
+    steps:
+      - name: Delete workflow runs
+        uses: Mattra7/delete-workflow-runs@f004a5c95c80ed25902030635f1003f56e07663d # v2.0.6
+        with:
+          token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          retain_days: 30
+          keep_minimum_runs: 10
