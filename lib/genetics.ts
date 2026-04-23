@@ -24,7 +24,7 @@ export const frenchieTypes: FrenchieType[] = [
     description: "The classic French Bulldog appearance with a solid fawn coat.",
     rarity: "Common",
     healthNotes: "Generally healthy baseline.",
-    imageUrl: "/images/fawn.webp",
+    imageUrl: "/images/fawn.png",
     genotype: {
       Brown: { name: "Brown", alleles: [D("B", "Normal"), D("B", "Normal")] },
       Dilution: { name: "Dilution", alleles: [D("D", "Normal"), D("D", "Normal")] },
@@ -43,7 +43,7 @@ export const frenchieTypes: FrenchieType[] = [
     description: "Dark with fawn hairs mixed in, creating a tiger-striped effect.",
     rarity: "Common",
     healthNotes: "Standard health.",
-    imageUrl: "/images/brindle.webp",
+    imageUrl: "/images/brindle.png",
     genotype: {
       Brown: { name: "Brown", alleles: [D("B", "Normal"), D("B", "Normal")] },
       Dilution: { name: "Dilution", alleles: [D("D", "Normal"), D("D", "Normal")] },
@@ -62,7 +62,7 @@ export const frenchieTypes: FrenchieType[] = [
     description: "A diluted black coat appearing grayish-blue.",
     rarity: "Rare",
     healthNotes: "Watch for color dilution alopecia.",
-    imageUrl: "/images/blue.webp",
+    imageUrl: "/images/blue.png",
     genotype: {
       Brown: { name: "Brown", alleles: [D("B", "Normal"), D("B", "Normal")] },
       Dilution: { name: "Dilution", alleles: [R("d", "Dilute"), R("d", "Dilute")] },
@@ -81,7 +81,7 @@ export const frenchieTypes: FrenchieType[] = [
     description: "A dark chocolate brown coat from the Frenchie-specific Cocoa gene.",
     rarity: "Rare",
     healthNotes: "Standard health.",
-    imageUrl: "/images/cocoa.webp",
+    imageUrl: "/images/cocoa.png",
     genotype: {
       Brown: { name: "Brown", alleles: [D("B", "Normal"), D("B", "Normal")] },
       Dilution: { name: "Dilution", alleles: [D("D", "Normal"), D("D", "Normal")] },
@@ -100,7 +100,7 @@ export const frenchieTypes: FrenchieType[] = [
     description: "A beautiful pale dusty gray/brown resulting from Blue and Cocoa.",
     rarity: "Exotic",
     healthNotes: "Watch for eye and skin sensitivities.",
-    imageUrl: "/images/lilac.webp",
+    imageUrl: "/images/lilac.png",
     genotype: {
       Brown: { name: "Brown", alleles: [D("B", "Normal"), D("B", "Normal")] },
       Dilution: { name: "Dilution", alleles: [R("d", "Dilute"), R("d", "Dilute")] },
@@ -119,7 +119,7 @@ export const frenchieTypes: FrenchieType[] = [
     description: "A mottled, patchy pattern on a solid base coat.",
     rarity: "Rare",
     healthNotes: "Never breed two merles together (risk of double merle deafness/blindness).",
-    imageUrl: "/images/merle.webp",
+    imageUrl: "/images/merle.png",
     genotype: {
       Brown: { name: "Brown", alleles: [D("B", "Normal"), D("B", "Normal")] },
       Dilution: { name: "Dilution", alleles: [D("D", "Normal"), D("D", "Normal")] },
@@ -138,7 +138,7 @@ export const frenchieTypes: FrenchieType[] = [
     description: "A long-haired Frenchie resulting from two copies of the L4 gene.",
     rarity: "Ultra-Exotic",
     healthNotes: "Requires extra grooming, no specific health risks.",
-    imageUrl: "/images/fluffy.webp",
+    imageUrl: "/images/fluffy.png",
     genotype: {
       Brown: { name: "Brown", alleles: [D("B", "Normal"), D("B", "Normal")] },
       Dilution: { name: "Dilution", alleles: [D("D", "Normal"), D("D", "Normal")] },
@@ -157,7 +157,7 @@ export const frenchieTypes: FrenchieType[] = [
     description: "A true lilac color from blue dilution and testable chocolate (rojo).",
     rarity: "Exotic",
     healthNotes: "Monitor for skin issues.",
-    imageUrl: "/images/isabella.webp",
+    imageUrl: "/images/isabella.png",
     genotype: {
       Brown: { name: "Brown", alleles: [R("b", "Rojo"), R("b", "Rojo")] },
       Dilution: { name: "Dilution", alleles: [R("d", "Dilute"), R("d", "Dilute")] },
@@ -176,7 +176,7 @@ export const frenchieTypes: FrenchieType[] = [
     description: "A cream-covered lilac, appearing shiny silver-white.",
     rarity: "Ultra-Exotic",
     healthNotes: "Sun protection needed for nose/skin.",
-    imageUrl: "/images/platinum.webp",
+    imageUrl: "/images/platinum.png",
     genotype: {
       Brown: { name: "Brown", alleles: [D("B", "Normal"), D("B", "Normal")] },
       Dilution: { name: "Dilution", alleles: [R("d", "Dilute"), R("d", "Dilute")] },
@@ -195,7 +195,7 @@ export const frenchieTypes: FrenchieType[] = [
     description: "A vivid reddish-brown coat.",
     rarity: "Exotic",
     healthNotes: "Standard health.",
-    imageUrl: "/images/rojo.webp",
+    imageUrl: "/images/rojo.png",
     genotype: {
       Brown: { name: "Brown", alleles: [R("b", "Rojo"), R("b", "Rojo")] },
       Dilution: { name: "Dilution", alleles: [D("D", "Normal"), D("D", "Normal")] },
@@ -214,7 +214,7 @@ export const frenchieTypes: FrenchieType[] = [
     description: "Solid black with tan points on eyebrows, cheeks, and legs.",
     rarity: "Rare",
     healthNotes: "Standard health.",
-    imageUrl: "/images/black-tan.webp",
+    imageUrl: "/images/black-tan.png",
     genotype: {
       Brown: { name: "Brown", alleles: [D("B", "Normal"), D("B", "Normal")] },
       Dilution: { name: "Dilution", alleles: [D("D", "Normal"), D("D", "Normal")] },
@@ -233,7 +233,7 @@ export const frenchieTypes: FrenchieType[] = [
     description: "Blue base coat with merle patching.",
     rarity: "Exotic",
     healthNotes: "Merle breeding restrictions apply.",
-    imageUrl: "/images/blue-merle.webp",
+    imageUrl: "/images/blue-merle.png",
     genotype: {
       Brown: { name: "Brown", alleles: [D("B", "Normal"), D("B", "Normal")] },
       Dilution: { name: "Dilution", alleles: [R("d", "Dilute"), R("d", "Dilute")] },
@@ -252,7 +252,7 @@ export const frenchieTypes: FrenchieType[] = [
     description: "Predominantly white with patches of color.",
     rarity: "Uncommon",
     healthNotes: "Risk of deafness if white covers the ears.",
-    imageUrl: "/images/pied.webp",
+    imageUrl: "/images/pied.png",
     genotype: {
       Brown: { name: "Brown", alleles: [D("B", "Normal"), D("B", "Normal")] },
       Dilution: { name: "Dilution", alleles: [D("D", "Normal"), D("D", "Normal")] },
@@ -271,7 +271,7 @@ export const frenchieTypes: FrenchieType[] = [
     description: "Long-haired with a solid blue coat.",
     rarity: "Ultra-Exotic",
     healthNotes: "Needs extensive grooming.",
-    imageUrl: "/images/blue-fluffy.webp",
+    imageUrl: "/images/blue-fluffy.png",
     genotype: {
       Brown: { name: "Brown", alleles: [D("B", "Normal"), D("B", "Normal")] },
       Dilution: { name: "Dilution", alleles: [R("d", "Dilute"), R("d", "Dilute")] },
@@ -290,7 +290,7 @@ export const frenchieTypes: FrenchieType[] = [
     description: "Lilac base coat with merle patching.",
     rarity: "Ultra-Exotic",
     healthNotes: "Requires careful breeding (no merle x merle).",
-    imageUrl: "/images/lilac-merle.webp",
+    imageUrl: "/images/lilac-merle.png",
     genotype: {
       Brown: { name: "Brown", alleles: [D("B", "Normal"), D("B", "Normal")] },
       Dilution: { name: "Dilution", alleles: [R("d", "Dilute"), R("d", "Dilute")] },
@@ -309,7 +309,7 @@ export const frenchieTypes: FrenchieType[] = [
     description: "A combination of Cocoa, Dilution, and Rojo.",
     rarity: "Ultra-Exotic",
     healthNotes: "Rare genetics, requires robust screening.",
-    imageUrl: "/images/new-shade-isabella.webp",
+    imageUrl: "/images/new-shade-isabella.png",
     genotype: {
       Brown: { name: "Brown", alleles: [R("b", "Rojo"), R("b", "Rojo")] },
       Dilution: { name: "Dilution", alleles: [R("d", "Dilute"), R("d", "Dilute")] },
@@ -328,7 +328,7 @@ export const frenchieTypes: FrenchieType[] = [
     description: "Solid off-white/cream coat masking other colors.",
     rarity: "Uncommon",
     healthNotes: "Standard health.",
-    imageUrl: "/images/cream.webp",
+    imageUrl: "/images/cream.png",
     genotype: {
       Brown: { name: "Brown", alleles: [D("B", "Normal"), D("B", "Normal")] },
       Dilution: { name: "Dilution", alleles: [D("D", "Normal"), D("D", "Normal")] },
@@ -347,7 +347,7 @@ export const frenchieTypes: FrenchieType[] = [
     description: "Lilac coat with tan points.",
     rarity: "Ultra-Exotic",
     healthNotes: "Standard health.",
-    imageUrl: "/images/lilac-tan.webp",
+    imageUrl: "/images/lilac-tan.png",
     genotype: {
       Brown: { name: "Brown", alleles: [D("B", "Normal"), D("B", "Normal")] },
       Dilution: { name: "Dilution", alleles: [R("d", "Dilute"), R("d", "Dilute")] },
