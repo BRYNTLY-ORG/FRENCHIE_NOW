@@ -13,11 +13,11 @@ export interface MarketData {
 
 export const marketTrendData = [
   { year: "2020", price: 4500, volume: 1200 },
-  { year: "2021", price: 6000, volume: 2000 },
+  { year: "2021", price: 6500, volume: 2000 },
   { year: "2022", price: 8500, volume: 3500 },
-  { year: "2023", price: 7200, volume: 4200 },
-  { year: "2024", price: 9500, volume: 5000 },
-  { year: "2025", price: 12000, volume: 6500 },
+  { year: "2023", price: 5500, volume: 4200 },
+  { year: "2024", price: 5000, volume: 5000 },
+  { year: "2025", price: 5200, volume: 5500 },
 ];
 
 export const rarityDistribution = [
@@ -37,39 +37,40 @@ export function getMarketDataForType(type: FrenchieType): MarketData {
 
   switch (type.rarity) {
     case "Common":
-      basePrice = 3000;
-      maxPrice = 5000;
+      basePrice = 2500;
+      maxPrice = 4500;
       demand = 60;
       supply = 90;
       break;
     case "Uncommon":
-      basePrice = 4000;
-      maxPrice = 7000;
+      basePrice = 3500;
+      maxPrice = 6000;
       demand = 70;
       supply = 60;
       break;
     case "Rare":
-      basePrice = 6000;
-      maxPrice = 12000;
+      basePrice = 5000;
+      maxPrice = 8500;
       demand = 85;
       supply = 40;
       break;
     case "Exotic":
-      basePrice = 15000;
-      maxPrice = 40000;
+      basePrice = 7500;
+      maxPrice = 15000;
       demand = 95;
       supply = 15;
       break;
     case "Ultra-Exotic":
-      basePrice = 35000;
-      maxPrice = 100000;
+      basePrice = 15000;
+      maxPrice = 35000;
       demand = 99;
       supply = 5;
       break;
   }
 
   // Adjust specific ones
-  if (type.id === "fluffy") maxPrice = 80000;
+  if (type.id.includes("fluffy")) maxPrice = 45000;
+  if (type.id === "new-shade-isabella") maxPrice = 40000;
 
   const buyScore = Math.min(100, Math.round((demand / supply) * 30));
   const holdScore = Math.min(100, Math.round(demand * 0.8));
