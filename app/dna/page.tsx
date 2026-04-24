@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo } from "react";
+import { Suspense } from "react";
 import Image from "next/image";
 import { useSearchParams } from "next/navigation";
 import { frenchieTypes } from "@/lib/genetics";
@@ -8,9 +9,9 @@ import { DNADiagram } from "@/components/DNADiagram";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Search, HeartPulse } from "lucide-react";
+import { Search, HeartPulse, Loader2 } from "lucide-react";
 
-export default function DNAPage() {
+function DNAViewer() {
   const searchParams = useSearchParams();
   const initialType = searchParams.get("type");
   const [searchTerm, setSearchTerm] = useState("");
@@ -25,12 +26,7 @@ export default function DNAPage() {
   const selectedDog = filteredTypes.includes(defaultDog as any) ? defaultDog : filteredTypes[0];
 
   return (
-    <div className="container mx-auto px-4 py-12 max-w-7xl">
-      <div className="text-center mb-12">
-        <h1 className="text-4xl font-extrabold mb-4 text-primary">DNA Visualizer</h1>
-        <p className="text-lg text-muted-foreground">Search and inspect the genotype of different French Bulldogs.</p>
-      </div>
-
+    <>
       <div className="max-w-md mx-auto mb-10 relative">
         <Search className="absolute left-3 top-3 h-5 w-5 text-muted-foreground" />
         <Input 
@@ -91,6 +87,21 @@ export default function DNAPage() {
           <p className="text-xl">No Frenchie types found matching your search.</p>
         </div>
       )}
+    </>
+  );
+}
+
+export default function DNAPage() {
+  return (
+    <div className="container mx-auto px-4 py-12 max-w-7xl">
+      <div className="text-center mb-12">
+        <h1 className="text-4xl font-extrabold mb-4 text-primary">DNA Visualizer</h1>
+        <p className="text-lg text-muted-foreground">Search and inspect the genotype of different French Bulldogs.</p>
+      </div>
+
+      <Suspense fallback={<div className="flex justify-center py-20"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>}>
+        <DNAViewer />
+      </Suspense>
     </div>
   );
 }
