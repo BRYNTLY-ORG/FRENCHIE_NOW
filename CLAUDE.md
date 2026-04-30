@@ -15,3 +15,5 @@ Use `@claude` in PR comments or review threads to request an interactive Claude
 response. The automated `claude-code-action` workflow also reviews non-draft PRs
 on open, sync, and ready-for-review events when `CLAUDE_CODE_OAUTH_TOKEN` is
 configured.
+
+- **Institutional Memory**: Always check `PROJECT/Docs/LESSONS_LEARNED.md` and `PROJECT/Docs/GLOBAL_TACTICAL_PLAYBOOK.md` to ensure you aren't repeating historical mistakes. Document any new complex resolutions in `LESSONS_LEARNED.md`.

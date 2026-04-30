@@ -9,3 +9,5 @@ When reviewing pull requests, focus on:
 5. **Best Practices**: Identify deprecated APIs, missing input validation, and inconsistent patterns.
 
 Provide concrete fix suggestions with code where possible.
+
+6. **Institutional Memory**: Check `PROJECT/Docs/LESSONS_LEARNED.md` and `PROJECT/Docs/GLOBAL_TACTICAL_PLAYBOOK.md` to ensure the PR does not reintroduce historical regressions or violate organization-wide tactical rules.
