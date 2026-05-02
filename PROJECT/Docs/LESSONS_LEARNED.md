@@ -1,4 +1,4 @@
-# Lessons Learned: [Repository Name]
+# Lessons Learned: FRENCHIE_NOW
 
 This document serves as the **Institutional Memory** for this repository. It records technical insights, root causes of regressions, and permanent fixes discovered by AI agents and human engineers.
 

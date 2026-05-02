@@ -1,5 +1,5 @@
 ---
-repository: "[Repository Name]"
+repository: "FRENCHIE_NOW"
 mission_critical: true
 primary_language: "[e.g., TypeScript, Python, Bash]"
 health_check_url: "[e.g., https://example.bryntly.org/health]"
@@ -8,7 +8,7 @@ deploy_target: "[e.g., AWS Lambda, GitHub Pages, Tailscale Node]"
 trusted_domains: ["github.com", "api.github.com", "controlplane.tailscale.com", "log.tailscale.com", "login.tailscale.com"]
 ---
 
-# Production Specification: [Repository Name]
+# Production Specification: FRENCHIE_NOW
 
 This document serves as the **Living Contract** for this repository. It defines the product mission, deployment targets, health baselines, and critical requirements. 
 
