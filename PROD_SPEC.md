@@ -1,5 +1,18 @@
 # PROD_SPEC.md — FRENCHIE_NOW
 
+<!-- BRYNTLY-PROD-AGENT-GUARDRAILS:BEGIN -->
+## Agent Production Operations Addendum (2026-05-07)
+
+- Treat this `PROD_SPEC.md` as the production safety contract. Follow the nearest `AGENTS.md`, `CLAUDE.md`, `CODEX.md`, `GEMINI.md`, and Copilot instructions before making code, workflow, infrastructure, or data changes.
+- Classify commands before running them as read-only diagnostics, advisory AI/model output, local file/state changes, external service mutations, or secret-bearing authentication.
+- Prefer read-only diagnostics first. External service mutations require explicit user approval unless the task already requests that exact side effect; confirm target host, repo, branch, account, profile, environment, or device.
+- Keep tokens, API keys, cookies, private keys, passwords, one-time codes, QR payloads, patient identifiers, and customer data out of prompts, repo files, shell history, process arguments, screenshots, and logs.
+- Treat `docker ai`, `gk ai`, `lms`, Copilot, Ollama, Postman, and OpenClaw outputs as advisory until verified with authoritative read-back commands, tests, health checks, service logs, or this spec's verification surface.
+- For API validation, inspect the Postman target base URL, auth mode, and mutating requests before `postman collection run <collectionId/Path>`; use `postman spec lint <spec>` for spec checks; destructive API calls, monitors, runner jobs, workspace edits, or environment updates require explicit approval.
+- For OpenClaw, Tailscale, and GitHub operations, start with read-only diagnostics such as `openclaw health --json`, `openclaw status --all --json`, `tailscale status`, `tailscale netcheck`, `gh pr view`, and `gh pr checks`; verify mutations with read-back status from the authoritative tool or service.
+- Before claiming production completion, run the smallest relevant verification surface from this spec and report `Docs / Build / Tests` status.
+<!-- BRYNTLY-PROD-AGENT-GUARDRAILS:END -->
+
 > **Living Contract.** This is the source of truth for this repository's product mission, baseline contract, and current actual state. The document has two parts with two different owners:
 >
 > - **Part 1 (Intended Specification)** — governed by **humans**. AI agents must obtain explicit human approval (per `AGENTS.md`) before modifying anything in Part 1.
@@ -213,5 +226,5 @@ Reviewer agents wired (per `AGENTS.md`): GitHub Copilot, Claude (Anthropic), Cod
 
 ---
 
-*Part 1 last reviewed by humans: pending.  
+*Part 1 last reviewed by humans: pending.
 Part 2 last refreshed by an autonomous agent (Claude Opus 4.7) on 2026-05-02.*
