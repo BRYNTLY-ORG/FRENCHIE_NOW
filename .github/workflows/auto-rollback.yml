@@ -30,12 +30,12 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
-          token: ${{ steps.app-token.outputs.token || secrets.AGENT_PAT || github.token }}
+          token: ${{ steps.app-token.outputs.token || github.token || secrets.AGENT_PAT }}
           fetch-depth: 0
 
       - name: Perform Revert
         env:
-          GITHUB_TOKEN: ${{ steps.app-token.outputs.token || secrets.AGENT_PAT || github.token }}
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token || github.token || secrets.AGENT_PAT }}
         run: |
           SHA="${{ github.event.inputs.commit_sha }}"
           INCIDENT="${{ github.event.inputs.incident_number }}"
