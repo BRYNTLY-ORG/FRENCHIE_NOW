@@ -63,7 +63,7 @@ jobs:
           github_token: ${{ steps.app-token.outputs.token || github.token || secrets.AGENT_PAT }}
           trigger_phrase: "@claude"
           prompt: |
-            You are a code reviewer working alongside Copilot, Gemini, Codex, and Sentry.
+            You are a code reviewer working alongside Copilot, Gemini, Codex.
             
             ### Repository Contract (PROD_SPEC.md)
             ${{ steps.fetch-spec.outputs.spec != '' && steps.fetch-spec.outputs.spec || 'No PROD_SPEC.md found.' }}

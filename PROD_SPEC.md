@@ -51,7 +51,7 @@ These are the directional goals Part 1 commits to. They define the runway Part 2
 3. **Test runner** — introduce `vitest` (chosen for ESM compatibility with this Next 16 / Tailwind 4 stack) with regression tests for the Merle-safety rule and the rarity scoring engine.
 4. **Real or honestly-labelled market data** — either (a) ingest a real data source for `marketTrendData`, or (b) prominently label all market dashboards as "illustrative model output, not real transactions."
 5. **Deploy script repaired or removed** — fix `deploy.sh` so it targets `next.config.mjs` (not the non-existent `next.config.ts`), or delete it and document `git push origin main` as the only deploy path.
-6. **Telemetry** — wire a real production error tracker (Sentry is referenced org-wide; no DSN currently in this repo) so production regressions are observable.
+6. **Telemetry** — wire a real production error tracker so production regressions are observable.
 
 ## 1.3 Critical path (must keep working on every change)
 
@@ -110,7 +110,7 @@ Because this is a static-data marketing/education site on Vercel with no backend
 | Active dark-mode toggle | `components/theme-provider.tsx` exists with a `d`-key hotkey **but is never mounted in `app/layout.tsx`** | ⚠️ dormant — does not work in production |
 | Real Punnett-square offspring solver | — | ❌ not implemented (current logic in `calculateOffspring` is a rarity-bucket heuristic with `Math.abs(...) <= 1.5` filtering) |
 | Test suite | `package.json` defines no `test` script; no `vitest` / `jest` config; no `__tests__/` directory | ❌ not implemented |
-| Production telemetry / error tracker (Sentry, etc.) | No `Sentry.init`, no DSN, no `process.env` references in `app/`, `lib/`, or `components/` | ❌ not implemented |
+| Production telemetry / error tracker | No telemetry SDK init, no DSN, no `process.env` references in `app/`, `lib/`, or `components/` | ❌ not implemented |
 | Working `deploy.sh` | Script appends a cache-buster comment to `next.config.ts`, but the actual config file is `next.config.mjs` — running it creates a stray `next.config.ts` instead of busting the real one | 🐞 broken |
 
 ## 2.2 Routes and exposed endpoints
@@ -186,7 +186,7 @@ Lockfiles checked in: both `bun.lock` and `package-lock.json`.
 
 ## 2.6 Secrets and environment surface
 
-**The application code itself reads zero environment variables.** A repo-wide search across `app/`, `lib/`, and `components/` for `process.env`, `API_KEY`, `TOKEN`, `SECRET`, and `Sentry` returns no matches. There is no `.env`, `.env.local`, or `.env.example` checked in. `.gitignore` excludes `.env*.local`.
+**The application code itself reads zero environment variables.** A repo-wide search across `app/`, `lib/`, and `components/` for `process.env`, `API_KEY`, `TOKEN`, and `SECRET` returns no matches. There is no `.env`, `.env.local`, or `.env.example` checked in. `.gitignore` excludes `.env*.local`.
 
 The org-level secrets and variables referenced by `AGENTS.md` are consumed only by GitHub Actions / agent infrastructure, **not by the deployed app**:
 
@@ -210,7 +210,7 @@ YAML workflows currently present:
 `gh aw` agentic specs (Markdown):
 `ci-doctor-claude.md`, `ci-doctor-codex.md`, `ci-doctor-copilot.md`.
 
-Reviewer agents wired (per `AGENTS.md`): GitHub Copilot, Claude (Anthropic), Codex (OpenAI), Gemini Code Assist, ChatGPT Codex Connector, Sentry, Ollama Cloud (`kimi-k2.6:cloud`, `glm-5.1:cloud`, `minimax-m2.7:cloud`).
+Reviewer agents wired (per `AGENTS.md`): GitHub Copilot, Claude (Anthropic), Codex (OpenAI), Gemini Code Assist, ChatGPT Codex Connector, Ollama Cloud (`kimi-k2.6:cloud`, `glm-5.1:cloud`, `minimax-m2.7:cloud`).
 
 ## 2.8 Hosting / deploy
 

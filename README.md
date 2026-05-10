@@ -76,7 +76,7 @@ Node 18+ (or Bun) is required; the repo commits both `bun.lock` and `package-loc
 
 This repo is part of the `BRYNTLY-ORG` automated agent fleet. See:
 
-- `AGENTS.md` — full rundown of the AI reviewer fleet (Copilot, Claude, Codex, Gemini, ChatGPT-Codex-Connector, Sentry, Ollama Cloud Kimi/GLM/MiniMax) and lifecycle workflows under `.github/workflows/`.
+- `AGENTS.md` — full rundown of the AI reviewer fleet (Copilot, Claude, Codex, Gemini, ChatGPT-Codex-Connector, Ollama Cloud Kimi/GLM/MiniMax) and lifecycle workflows under `.github/workflows/`.
 - `CLAUDE.md` — Claude Code project instructions.
 - `PROD_SPEC.md` — the **living contract** for this repo's mission, critical path, and health baselines. Agents must consult it before triage, refactors, or feature work.
 - `PROJECT/Docs/LESSONS_LEARNED.md` — institutional memory; agents append entries after every successful autonomous fix.

@@ -40,12 +40,6 @@ This repository uses multiple AI agents for automated code review, conflict reso
 - **Trigger**: @mention in PR comments
 - **Capabilities**: Code fixes, diagnostics, review suggestions
 
-### Sentry
-- **Handle**: `@sentry[bot]`
-- **Trigger**: @mention in PR comments; auto-links issues
-- **Capabilities**: Error tracking integration, issue linking, performance analysis
-- **Assignment note**: Sentry is not requested as a formal reviewer by the shared assignment action; mention it directly when Sentry issue context is needed
-
 ### Ollama Cloud (Kimi + GLM + MiniMax)
 - **Trigger**: Automatic on PR open/sync/ready via `ollama-pr-review` workflow
 - **Models**: `kimi-k2.6:cloud` (lead primary pass), `glm-5.1:cloud` (secondary pass), `minimax-m2.7:cloud` (deep pass on every non-draft PR)

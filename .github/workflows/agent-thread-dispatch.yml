@@ -48,7 +48,7 @@ jobs:
           script: |
             const { owner, repo } = context.repo;
             const eventName = context.eventName;
-            const extraAgentMentions = '@gemini-code-assist[bot] @chatgpt-codex-connector[bot] @sentry[bot]';
+            const extraAgentMentions = '@gemini-code-assist[bot] @chatgpt-codex-connector[bot]';
 
             const prNumber = eventName === 'issue_comment'
               ? context.payload.issue.number
