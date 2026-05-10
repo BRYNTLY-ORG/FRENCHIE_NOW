@@ -33,7 +33,7 @@ jobs:
           script: |
             const { owner, repo } = context.repo;
             const repoFullName = `${owner}/${repo}`;
-            const extraAgentMentions = '@gemini-code-assist[bot] @chatgpt-codex-connector[bot] @sentry[bot]';
+            const extraAgentMentions = '@gemini-code-assist[bot] @chatgpt-codex-connector[bot]';
 
             // Review bot slugs — must match .github/actions/ensure-agent-assignees/action.yml REVIEW_BOTS
             const REVIEW_BOT_SLUGS = ['copilot', 'gemini-code-assist', 'chatgpt-codex-connector', 'claude', 'openai-code-agent'];
