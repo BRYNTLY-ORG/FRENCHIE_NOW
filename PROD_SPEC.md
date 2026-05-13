@@ -15,6 +15,31 @@
 - Before claiming production completion, run the smallest relevant verification surface from this spec and report `Docs / Build / Tests` status. For memory-sensitive changes, include `/Users/pacman/bin/agent-memory status` and expect Harrier 5376-dim embeddings with no sustained queue backlog.
 <!-- BRYNTLY-PROD-AGENT-GUARDRAILS:END -->
 
+## AI Review Fallback Contract
+
+Enterprise GitHub Copilot remains the primary automated code-review lane for
+pull requests. The repository also carries `.github/workflows/ai-review-fallback.yml`
+as a non-Copilot fallback path for Copilot usage exhaustion, service limits, or
+temporary Copilot review unavailability.
+
+The fallback workflow must run on `[self-hosted, Linux, ARM64, num5,
+num5-linux]`, must not check out pull-request code, and must use pinned GitHub
+Actions. Its default reviewer is `@gemini-code-assist[bot]`; additional
+installed app reviewers may be added only through the non-secret
+`AI_REVIEW_FALLBACK_MENTIONS` variable after confirming the app is installed
+and allowed for the repository.
+
+Do not commit provider keys, local auth files, or clipboard-sourced secrets for
+review fallbacks. Ollama, Gemini API, ChatGPT/Codex connector, or other
+model-provider fallback integrations require explicit workflow and GitHub
+Actions secret/variable configuration, with secrets stored only in approved
+secret stores.
+
+For changes to automated PR review routing, validate with `actionlint`,
+`git diff --check`, remote default-branch read-back, and a canary pull request
+when reviewer routing or installed app behavior changes.
+
+
 > **Living Contract.** This is the source of truth for this repository's product mission, baseline contract, and current actual state. The document has two parts with two different owners:
 >
 > - **Part 1 (Intended Specification)** — governed by **humans**. AI agents must obtain explicit human approval (per `AGENTS.md`) before modifying anything in Part 1.
