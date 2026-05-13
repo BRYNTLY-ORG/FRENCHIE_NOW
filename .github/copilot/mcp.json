@@ -1,0 +1,34 @@
+{
+  "mcpServers": {
+    "github-agentic-workflows": {
+      "type": "local",
+      "command": "gh",
+      "args": [
+        "aw",
+        "mcp-server"
+      ],
+      "tools": [
+        "status",
+        "compile",
+        "logs",
+        "audit",
+        "checks",
+        "mcp-inspect",
+        "update",
+        "fix"
+      ]
+    },
+    "context7": {
+      "type": "local",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@upstash/context7-mcp"
+      ],
+      "tools": [
+        "resolve-library-id",
+        "get-library-docs"
+      ]
+    }
+  }
+}
