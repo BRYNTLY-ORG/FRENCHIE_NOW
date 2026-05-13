@@ -177,3 +177,5 @@ gh aw compile --validate
 - Follow security best practices: minimal permissions, explicit network access, no template injection
 - **Network configuration**: Use ecosystem identifiers (`node`, `python`, `go`, etc.) or explicit FQDNs in `network.allowed`. Bare shorthands like `npm` or `pypi` are **not** valid. See https://github.com/github/gh-aw/blob/v0.68.3/.github/aw/network.md for the full list of valid ecosystem identifiers and domain patterns.
 - **Single-file output**: When creating a workflow, produce exactly **one** workflow `.md` file. Do not create separate documentation files (architecture docs, runbooks, usage guides, etc.). If documentation is needed, add a brief `## Usage` section inside the workflow file itself.
+
+- Use Enterprise GitHub Copilot and configured GitHub MCP servers for Copilot review and agent work; do not route those tasks through local or third-party model-provider workflows unless explicitly approved.
