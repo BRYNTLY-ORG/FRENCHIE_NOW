@@ -1,0 +1,111 @@
+name: AI review fallback
+
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize, ready_for_review]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: Pull request number to check
+        required: true
+        type: number
+
+permissions:
+  issues: write
+  pull-requests: read
+
+concurrency:
+  group: ai-review-fallback-${{ github.event.pull_request.number || inputs.pr_number }}
+  cancel-in-progress: true
+
+env:
+  FALLBACK_REVIEW_MENTIONS: ${{ vars.AI_REVIEW_FALLBACK_MENTIONS || '@gemini-code-assist[bot]' }}
+
+jobs:
+  request-fallback-review:
+    if: ${{ github.event_name == 'workflow_dispatch' || !github.event.pull_request.draft }}
+    runs-on: [self-hosted, Linux, ARM64, num5, num5-linux]
+    steps:
+      - name: Request non-Copilot fallback review
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const prNumber = context.eventName === 'workflow_dispatch'
+              ? Number(core.getInput('pr_number'))
+              : context.payload.pull_request.number;
+
+            if (!Number.isInteger(prNumber) || prNumber <= 0) {
+              throw new Error(`Invalid PR number: ${prNumber}`);
+            }
+
+            const { data: pr } = await github.rest.pulls.get({
+              owner,
+              repo,
+              pull_number: prNumber,
+            });
+
+            if (pr.draft) {
+              core.info(`Skipping draft PR #${prNumber}; fallback review runs when the PR is ready.`);
+              return;
+            }
+
+            const fallbackMentions = (process.env.FALLBACK_REVIEW_MENTIONS || '@gemini-code-assist[bot]')
+              .split(/\s+/)
+              .map(value => value.trim())
+              .filter(Boolean);
+
+            const fallbackReviewers = new Set(
+              fallbackMentions.map(value => value.replace(/^@/, '').toLowerCase())
+            );
+
+            const reviews = await github.paginate(
+              github.rest.pulls.listReviews,
+              { owner, repo, pull_number: prNumber, per_page: 100 }
+            );
+
+            const hasFallbackReviewForHead = reviews.some(review => {
+              const reviewer = review.user?.login?.toLowerCase();
+              return reviewer
+                && fallbackReviewers.has(reviewer)
+                && review.commit_id === pr.head.sha;
+            });
+
+            if (hasFallbackReviewForHead) {
+              core.info(`Fallback review already exists for PR #${prNumber} at ${pr.head.sha}.`);
+              return;
+            }
+
+            const marker = `<!-- bryntly-ai-review-fallback head:${pr.head.sha} -->`;
+            const comments = await github.paginate(
+              github.rest.issues.listComments,
+              { owner, repo, issue_number: prNumber, per_page: 100 }
+            );
+
+            if (comments.some(comment => comment.body?.includes(marker))) {
+              core.info(`Fallback review request already posted for PR #${prNumber} at ${pr.head.sha}.`);
+              return;
+            }
+
+            const body = [
+              marker,
+              `${fallbackMentions.join(' ')} Please perform a non-Copilot fallback review for this PR head.`,
+              '',
+              'Context: Enterprise Copilot remains the primary reviewer, but this repository also requires a quota-independent fallback path when Copilot usage is exhausted or unavailable.',
+              '',
+              'Review focus:',
+              '- correctness and behavioral regressions',
+              '- security, credential, and permission risks',
+              '- CI/workflow, deployment, and self-hosted-runner regressions',
+              '- missing tests for materially risky changes',
+              '',
+              `PR head: \`${pr.head.sha}\``,
+              `Base branch: \`${pr.base.ref}\``,
+            ].join('\n');
+
+            await github.rest.issues.createComment({
+              owner,
+              repo,
+              issue_number: prNumber,
+              body,
+            });
