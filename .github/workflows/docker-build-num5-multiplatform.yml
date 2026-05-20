@@ -53,7 +53,7 @@ jobs:
             type=sha,prefix=num5-
 
       - name: Build and push multi-platform (num5-multi builder)
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v7
         with:
           context: .
           platforms: linux/amd64,linux/arm64,darwin/arm64
