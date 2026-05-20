@@ -27,7 +27,7 @@ jobs:
       - name: Set up Docker Buildx (num5 builder)
         uses: docker/setup-buildx-action@v3
         with:
-          builder: ${{ env.BUILDX_BUILDER }}
+          name: ${{ env.BUILDX_BUILDER }}
           append: |
             - builder: num5-multi
               config: /Users/pacman/.buildx-cache
@@ -60,7 +60,7 @@ jobs:
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          builder: ${{ env.BUILDX_BUILDER }}
+          name: ${{ env.BUILDX_BUILDER }}
           cache-from: type=local,src=/Users/pacman/.buildx-cache/num5-multi
           cache-to: type=local,dest=/Users/pacman/.buildx-cache/num5-multi,mode=max
 
