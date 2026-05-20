@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   auto-approve:
-    runs-on: [self-hosted, macOS, num5]
+    runs-on: [self-hosted, macOS, ARM64, num5]
     if: github.actor == 'dependabot[bot]'
     steps:
       - name: Generate GitHub App token
