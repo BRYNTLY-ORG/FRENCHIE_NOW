@@ -16,7 +16,7 @@ env:
 
 jobs:
   auto-fix:
-    runs-on: [self-hosted, macOS, num5]
+    runs-on: [self-hosted, macOS, ARM64, num5]
     steps:
       - name: Generate GitHub App token
         id: app-token
@@ -115,7 +115,7 @@ jobs:
                   .replace(/</g, '&lt;')
                   .replace(/>/g, '&gt;')
                   .replace(/`/g, "'")
-                  .replace(/@/g, '@\u200b');
+                  .replace(/@/g, '@​');
               }
 
               return comments.map(comment => {
@@ -131,7 +131,7 @@ jobs:
               }).join('\n');
             }
 
-            // ── Identify actionable comments ──────────────────────────
+            // ── Identify actionable comments ──────────────────────────────────
             let marker = '';
             let header = '';
             let summary = '';
@@ -174,7 +174,7 @@ jobs:
               summary = summarizeThread(actionableComments);
             }
 
-            // ── Auto-apply suggestion blocks ──────────────────────────
+            // ── Auto-apply suggestion blocks ─────────────────────────────────
             let autoApplied = 0;
             let autoAppliedFiles = [];
 
@@ -265,7 +265,7 @@ jobs:
               }
             }
 
-            // ── Post dispatch / verification comment ──────────────────
+            // ── Post dispatch / verification comment ────────────────────────
             const nestedReplyCount = actionableComments.filter(comment => comment.in_reply_to_id).length;
 
             const issueComments = await github.paginate(

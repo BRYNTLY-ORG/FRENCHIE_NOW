@@ -22,7 +22,7 @@ jobs:
     if: |
       github.event_name == 'pull_request_target' &&
       github.event.pull_request.draft == false
-    runs-on: [self-hosted, macOS, num5]
+    runs-on: [self-hosted, macOS, ARM64, num5]
     steps:
       - name: Generate GitHub App token
         id: app-token
@@ -69,7 +69,7 @@ jobs:
       github.event_name == 'pull_request_review' ||
       github.event_name == 'check_suite' ||
       github.event_name == 'status'
-    runs-on: [self-hosted, macOS, num5]
+    runs-on: [self-hosted, macOS, ARM64, num5]
     steps:
       - name: Generate GitHub App token
         id: app-token

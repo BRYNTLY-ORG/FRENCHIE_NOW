@@ -26,7 +26,7 @@ env:
 jobs:
   assign-single-pr:
     if: github.event_name == 'pull_request_target' || github.event_name == 'pull_request_review'
-    runs-on: [self-hosted, macOS, num5]
+    runs-on: [self-hosted, macOS, ARM64, num5]
     steps:
       - name: Generate GitHub App token
         id: app-token
@@ -48,7 +48,7 @@ jobs:
 
   assign-single-issue:
     if: github.event_name == 'issues'
-    runs-on: [self-hosted, macOS, num5]
+    runs-on: [self-hosted, macOS, ARM64, num5]
     steps:
       - name: Generate GitHub App token
         id: app-token
@@ -70,7 +70,7 @@ jobs:
 
   sweep-all-prs-and-issues:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-    runs-on: [self-hosted, macOS, num5]
+    runs-on: [self-hosted, macOS, ARM64, num5]
     steps:
       - name: Generate GitHub App token
         id: app-token

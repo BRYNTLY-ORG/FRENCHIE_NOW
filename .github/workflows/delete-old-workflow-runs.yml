@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   delete-runs:
-    runs-on: [self-hosted, macOS, num5]
+    runs-on: [self-hosted, macOS, ARM64, num5]
     steps:
       - name: Delete workflow runs
         uses: Mattra7/delete-workflow-runs@f004a5c95c80ed25902030635f1003f56e07663d # v2.0.6
