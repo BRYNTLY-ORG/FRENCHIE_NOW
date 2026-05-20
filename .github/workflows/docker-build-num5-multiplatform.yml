@@ -1,0 +1,86 @@
+name: Docker Build Multi-Platform (num5)
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+  BUILDX_BUILDER: num5-multi
+
+jobs:
+  build-num5:
+    name: Build Multi-Platform (num5)
+    runs-on: [self-hosted, Linux, ARM64, num5, num5-linux]
+    permissions:
+      contents: read
+      packages: write
+      security-events: write
+
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up Docker Buildx (num5 builder)
+        uses: docker/setup-buildx-action@v3
+        with:
+          name: ${{ env.BUILDX_BUILDER }}
+          append: |
+            - builder: num5-multi
+              config: /Users/pacman/.buildx-cache
+              driver-options: 'image=moby/buildkit:latest,network=host'
+          use: true
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,prefix=num5-
+
+      - name: Build and push multi-platform (num5-multi builder)
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64,darwin/arm64
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          name: ${{ env.BUILDX_BUILDER }}
+          cache-from: type=local,src=/Users/pacman/.buildx-cache/num5-multi
+          cache-to: type=local,dest=/Users/pacman/.buildx-cache/num5-multi,mode=max
+
+      - name: Build cache stats
+        if: always()
+        run: |
+          echo "Build cache directory:"
+          du -sh /Users/pacman/.buildx-cache/num5-multi || echo "Cache not yet created"
+
+      - name: Run Trivy vulnerability scan (linux/amd64)
+        if: ${{ github.event_name != 'pull_request' }}
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }}-amd64
+          format: sarif
+          output: trivy-results-amd64.sarif
+
+      - name: Upload Trivy results to GitHub Security
+        if: ${{ github.event_name != 'pull_request' && always() }}
+        uses: github/codeql-action/upload-sarif@v2
+        with:
+          sarif_file: trivy-results-amd64.sarif
+          category: trivy-num5-multi
